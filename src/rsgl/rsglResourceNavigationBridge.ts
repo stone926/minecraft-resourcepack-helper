@@ -14,13 +14,13 @@ import type {
 import type { ResourceNavigationResult } from "../resourceUniverse/navigation/resourceNavigationService";
 import { combineResourceFactsCoverage } from "../services/resourceFactsCoverage";
 import type {
-  ResourceUniverseNavigationFacade,
+  ResourceUniverseNavigation,
   UnifiedResourceCoverage
-} from "../services/resourceUniverseNavigationFacade";
+} from "../services/resourceUniverseNavigation";
 
 /** Main-extension endpoint for the LSP's server-to-client navigation request. */
 export async function resolveRsglResourceNavigation(
-  navigation: ResourceUniverseNavigationFacade,
+  navigation: ResourceUniverseNavigation,
   value: unknown,
   signal: AbortSignal
 ): Promise<RsglResourceNavigationResponse> {
@@ -52,7 +52,7 @@ export async function resolveRsglResourceNavigation(
 }
 
 async function resolveDefinition(
-  navigation: ResourceUniverseNavigationFacade,
+  navigation: ResourceUniverseNavigation,
   sourceUri: vscode.Uri,
   request: RsglResourceNavigationRequest,
   signal: AbortSignal
@@ -110,7 +110,7 @@ async function resolveDefinition(
 }
 
 async function resolveReferences(
-  navigation: ResourceUniverseNavigationFacade,
+  navigation: ResourceUniverseNavigation,
   sourceUri: vscode.Uri,
   request: RsglResourceNavigationRequest,
   signal: AbortSignal

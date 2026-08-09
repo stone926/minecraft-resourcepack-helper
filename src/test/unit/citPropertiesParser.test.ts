@@ -57,12 +57,18 @@ describe("CIT properties parser", () => {
   });
 
   it("supports multiline continuations and unicode escapes", () => {
-    const entries = parseCitProperties([
+    const text = [
       "nbt.display.Name=regex:foo\\",
       "  \\u0041bar"
-    ].join("\n"));
+    ].join("\n");
+    const result = parseCitPropertiesDocument(text);
+    const entries = result.entries;
 
     assert.strictEqual(entries.length, 1);
+    assert.deepStrictEqual(result.physicalLines, [
+      "nbt.display.Name=regex:foo\\",
+      "  \\u0041bar"
+    ]);
     assert.strictEqual(entries[0].rawValue, "regex:foo\\n\\u0041bar");
     assert.strictEqual(entries[0].value, "regex:foo\nAbar");
     assert.deepStrictEqual(entries[0].valueRange.end, { line: 2, column: 11 });

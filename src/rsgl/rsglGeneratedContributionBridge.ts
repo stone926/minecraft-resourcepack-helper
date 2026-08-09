@@ -38,6 +38,7 @@ import {
   type RsglRuntimeLoadReason,
   type RsglRuntimeState
 } from "./runtime";
+import { asDisposable } from "../utils/asyncShutdown";
 
 export interface RsglGeneratedProjectContextStore {
   getCachedContext(projectId: string): ResourcePackProjectContextDto | undefined;
@@ -57,6 +58,10 @@ export interface RsglGeneratedContributionBridgeOptions extends RsglMaterializat
  * project explicitly marked relevant may load the host or start the LSP.
  */
 export class RsglGeneratedContributionBridge {
+  private readonly shutdownDisposable = asDisposable(
+    () => this.shutdownNow(),
+    error => console.error("Failed to shut down the RSGL generated-resource bridge.", error)
+  );
   public readonly provider: RsglGeneratedProvider;
   public readonly connection: RsglGeneratedProviderConnection;
 
@@ -76,7 +81,6 @@ export class RsglGeneratedContributionBridge {
   private boundRuntime?: RsglRuntimeInstance;
   private runtimeInvalidationSubscription?: { dispose(): void };
   private disposed = false;
-  private shutdownPromise?: Promise<void>;
 
   public constructor(
     private readonly projects: RsglGeneratedProjectContextStore,
@@ -280,11 +284,11 @@ export class RsglGeneratedContributionBridge {
   }
 
   public dispose(): void {
-    void this.shutdown();
+    this.shutdownDisposable.dispose();
   }
 
   public shutdown(): Promise<void> {
-    return this.shutdownPromise ??= this.shutdownNow();
+    return this.shutdownDisposable.shutdown();
   }
 
   private async requestSnapshot(
@@ -747,6 +751,3 @@ function invalidationReasonFromNotification(value: unknown): string | undefined 
   const reason = (value as { reason?: unknown }).reason;
   return typeof reason === "string" ? reason : undefined;
 }
-
-
-

@@ -7,7 +7,8 @@ import type {
   ResourceUniverseService
 } from "../resourceUniverse";
 import { isAbortError } from "../utils/abortError";
-import type { ResourceUniverseNavigationFacade } from "../services/resourceUniverseNavigationFacade";
+import type { ResourceUniverseNavigation } from "../services/resourceUniverseNavigation";
+import { asDisposable } from "../utils/asyncShutdown";
 import {
   createInstalledRsglRuntimeLoader,
   RsglRuntimeController,
@@ -52,7 +53,7 @@ export function registerRsglSubsystem(
   context: vscode.ExtensionContext,
   projects: ResourcePackProjectService,
   universe: ResourceUniverseService,
-  navigation: ResourceUniverseNavigationFacade,
+  navigation: ResourceUniverseNavigation,
   options: RsglSubsystemRegistrationOptions = {}
 ): RsglSubsystemRegistration {
   const disposables: vscode.Disposable[] = [];
@@ -80,6 +81,16 @@ export function registerRsglSubsystem(
       recheckSignals: () => queueMicrotask(() => void recheckKnownSignals())
     }
   );
+  const shutdownRegistration = async (): Promise<void> => {
+    for (const disposable of disposables.splice(0)) {
+      disposable.dispose();
+    }
+    await shutdownSubsystem();
+  };
+  const shutdownDisposable = asDisposable(
+    shutdownRegistration,
+    error => console.error("Failed to shut down the integrated RSGL subsystem.", error)
+  );
   const registration: RsglSubsystemRegistration = {
     controller,
     executeCommand: executeProxyCommand,
@@ -104,18 +115,8 @@ export function registerRsglSubsystem(
       }
       return generated.refreshProject(projectId, { projectId }, signal, causeId);
     },
-    dispose: () => {
-      for (const disposable of disposables.splice(0)) {
-        disposable.dispose();
-      }
-      void shutdownSubsystem();
-    },
-    shutdown: async () => {
-      for (const disposable of disposables.splice(0)) {
-        disposable.dispose();
-      }
-      await shutdownSubsystem();
-    }
+    dispose: () => shutdownDisposable.dispose(),
+    shutdown: () => shutdownDisposable.shutdown()
   };
   if (options.registerInContext !== false) {
     context.subscriptions.push(registration);

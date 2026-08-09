@@ -1,8 +1,5 @@
 import type * as vscode from "vscode";
-
-export interface AsyncShutdown {
-  shutdown(): Promise<void>;
-}
+import type { AsyncShutdown } from "../utils/asyncShutdown";
 
 /** Shuts down independent owners without letting one failure skip the other. */
 export async function shutdownExtensionSubsystems(

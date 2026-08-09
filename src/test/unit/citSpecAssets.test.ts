@@ -1,6 +1,8 @@
 import * as assert from "node:assert";
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
+import { loadCitBuiltinResourceCatalog } from "../../cit/citBuiltinResourceCatalog";
 import { CitSpecService } from "../../cit/citSpecService";
 import type { CitSpecFragment } from "../../cit/citSpecTypes";
 
@@ -20,8 +22,46 @@ const requiredFiles = [
 
 describe("CIT spec assets", () => {
   it("parses every bundled CIT spec JSON asset", () => {
-    for (const file of [...collectJsonFiles(EN_CIT), ...collectJsonFiles(ZH_CIT)]) {
+    for (const file of collectJsonFiles(CIT_ASSETS)) {
       assert.doesNotThrow(() => JSON.parse(fs.readFileSync(file, "utf8")), file);
+    }
+  });
+
+  it("loads the versioned builtin resource catalog with canonical unique values", () => {
+    const catalog = loadCitBuiltinResourceCatalog(CIT_ASSETS);
+
+    assert.strictEqual(catalog.schemaVersion, 1);
+    assert.strictEqual(catalog.defaultNamespace, "minecraft");
+    assert.deepStrictEqual(
+      [catalog.items.length, catalog.enchantments.length],
+      [95, 42]
+    );
+    assert.ok(catalog.items.includes("minecraft:stick"));
+    assert.ok(catalog.enchantments.includes("minecraft:sharpness"));
+    assert.deepStrictEqual(catalog.armorSuffixes, [
+      "_helmet",
+      "_chestplate",
+      "_leggings",
+      "_boots"
+    ]);
+  });
+
+  it("rejects malformed builtin resource catalogs at the asset boundary", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "mc-res-cit-catalog-"));
+    try {
+      fs.writeFileSync(path.join(root, "builtin-resource-ids.json"), JSON.stringify({
+        schemaVersion: 1,
+        defaultNamespace: "minecraft",
+        items: ["not a resource id"],
+        enchantments: [],
+        armorSuffixes: ["helmet"]
+      }));
+      assert.throws(
+        () => loadCitBuiltinResourceCatalog(root),
+        /items contains invalid resource path/
+      );
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
     }
   });
 

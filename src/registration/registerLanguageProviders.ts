@@ -5,7 +5,7 @@ import citHoverProvider from "../cit/providers/citHoverProvider";
 import { createResourceCompletionProvider } from "../providers/resourceCompletionProvider";
 import { createResourceDefinitionProvider } from "../providers/resourceDefinitionProvider";
 import { createResourceReferenceProvider } from "../providers/resourceReferenceProvider";
-import type { ResourceUniverseNavigation } from "../services/resourceUniverseNavigationFacade";
+import type { ResourceUniverseNavigation } from "../services/resourceUniverseNavigation";
 import textureVarDefinitionProvider from "../providers/textureVarDefinitionProvider";
 import { getResourceDocumentSelectors } from "../resources/resourceSurfaceRegistry";
 

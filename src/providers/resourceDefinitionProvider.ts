@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import type { ResourceLocation, ResourceNavigationResult } from "../resourceUniverse";
-import type { ResourceUniverseNavigation } from "../services/resourceUniverseNavigationFacade";
+import type { ResourceUniverseNavigation } from "../services/resourceUniverseNavigation";
 import {
   cancellationTokenToAbortSignal,
   toVscodeLocation,

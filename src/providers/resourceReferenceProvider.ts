@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import type { ResourceUniverseNavigation } from "../services/resourceUniverseNavigationFacade";
+import type { ResourceUniverseNavigation } from "../services/resourceUniverseNavigation";
 import { toVscodeLocation, uniqueVscodeLocations } from "../utils/resourceLocationVscode";
 
 /**

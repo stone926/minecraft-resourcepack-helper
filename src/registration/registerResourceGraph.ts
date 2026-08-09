@@ -6,7 +6,7 @@ import {
   resourceUniverseChangeAffectsSearchInventory
 } from "../services/resourceSearchInvalidation";
 import { ResourceSearchService } from "../services/resourceSearchService";
-import type { ResourceUniverseNavigation } from "../services/resourceUniverseNavigationFacade";
+import type { ResourceUniverseNavigation } from "../services/resourceUniverseNavigation";
 import { ResourceGraphSearchQuickPick } from "../views/resourceGraphSearchQuickPick";
 import { ResourceGraphTreeProvider } from "../views/resourceGraphTree";
 import {

@@ -8,8 +8,6 @@ import {
   type CitTextRange
 } from "../citLanguage";
 
-const pendingCompletionRefreshes = new Set<string>();
-
 const citCompletionProvider: vscode.CompletionItemProvider = {
   provideCompletionItems(document: vscode.TextDocument, position: vscode.Position) {
     const resources = getCompletionResourceIds(document);
@@ -27,28 +25,23 @@ export default citCompletionProvider;
 
 function getCompletionResourceIds(document: vscode.TextDocument): CitResourceCompletionData {
   const configuration = getResourceConfiguration();
-  const cachedResourceIds = citResourceIdService.getCachedResourceIds(document.fileName, configuration);
-  if (cachedResourceIds) {
-    return cachedResourceIds;
-  }
-
-  const refreshKey = [
-    document.uri.toString(),
-    document.version,
-    configuration.defaultAssetsPath ?? "",
-    (configuration.resourcePackRoots ?? []).join("|")
-  ].join("\0");
-  if (!pendingCompletionRefreshes.has(refreshKey)) {
-    pendingCompletionRefreshes.add(refreshKey);
-    citResourceIdService.warmResourceIds(document.fileName, configuration, () => {
-      pendingCompletionRefreshes.delete(refreshKey);
-      if (vscode.window.activeTextEditor?.document === document) {
-        void vscode.commands.executeCommand("editor.action.triggerSuggest");
+  const requestedVersion = document.version;
+  return citResourceIdService.getResourceIdsForHotPath(
+    document.fileName,
+    configuration,
+    {
+      key: `completion\0${document.uri.toString()}`,
+      onReady: () => {
+        if (vscode.window.activeTextEditor?.document === document) {
+          // A newer document version gets its own completion request and
+          // replaces this keyed subscriber while the shared warmup is pending.
+          if (document.version === requestedVersion) {
+            void vscode.commands.executeCommand("editor.action.triggerSuggest");
+          }
+        }
       }
-    });
-  }
-
-  return citResourceIdService.getBuiltinResourceIds();
+    }
+  );
 }
 
 function toCompletionItem(candidate: CitCompletionCandidate, range: vscode.Range): vscode.CompletionItem {

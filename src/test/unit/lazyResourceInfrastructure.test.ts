@@ -4,8 +4,8 @@ import * as path from "node:path";
 import type {
   GeneratedResourceProjectRefresher,
   ResourceUniverseNavigation,
-  UnifiedBlockResourceSet
-} from "../../services/resourceUniverseNavigationFacade";
+  UnifiedResourceInventory
+} from "../../services/resourceUniverseNavigation";
 import type { ResourceUniverseChangeEvent } from "../../resourceUniverse";
 import {
   LazyResourceInfrastructureOwner,
@@ -162,7 +162,7 @@ class FakeInfrastructure implements ResourceNavigationInfrastructure {
 }
 
 class FakeNavigation implements ResourceUniverseNavigation {
-  public static readonly blockstates: UnifiedBlockResourceSet = {
+  public static readonly blockstates: UnifiedResourceInventory = {
     resources: [],
     coverage: "authoritative"
   };

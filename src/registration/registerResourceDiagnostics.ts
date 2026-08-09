@@ -6,7 +6,7 @@ import {
   type ResourceDiagnosticResolver
 } from "../diagnostics/resourceDiagnostics";
 import { createKeyedDebouncer, createTrailingDebouncer } from "../utils/debounce";
-import type { ResourceUniverseNavigation } from "../services/resourceUniverseNavigationFacade";
+import type { ResourceUniverseNavigation } from "../services/resourceUniverseNavigation";
 
 export interface ResourceDiagnosticsController extends vscode.Disposable {
   refresh(document: vscode.TextDocument): void;

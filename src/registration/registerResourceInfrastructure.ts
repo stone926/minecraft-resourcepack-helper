@@ -7,12 +7,13 @@ import { PhysicalAssetContributionProvider } from "../resourceUniverse/providers
 import { VscodePhysicalAssetSource } from "../resourceUniverse/providers/vscodePhysicalAssetSource";
 import { LazyVscodeArchiveResources } from "../resourceUniverse/virtualFs/lazyVscodeArchiveResources";
 import { affectsResourceResolutionConfiguration } from "../utils/resourceConfigurationKeys";
+import type { ResourceUniverseNavigation } from "../services/resourceUniverseNavigation";
 import { ResourceUniverseNavigationFacade } from "../services/resourceUniverseNavigationFacade";
 
 export interface ResourceInfrastructure extends vscode.Disposable {
   readonly projects: ResourcePackProjectService;
   readonly universe: ResourceUniverseService;
-  readonly navigation: ResourceUniverseNavigationFacade;
+  readonly navigation: ResourceUniverseNavigation;
 }
 
 /**

@@ -16,15 +16,6 @@ import {
   type RsglSymbol
 } from "../../../rsgl-core/src";
 import {
-  clampOffset,
-  completionItemsForContent,
-  completionItemsForDocument,
-  computeDocumentHover,
-  computeDocumentSignatureHelp,
-  computeDocumentDiagnostics,
-  computeDocumentSemanticTokens,
-  definitionLocationForDocument,
-  definitionLocationsForDocument,
   dependencyInvalidationPathsForStructuralChange,
   dependencyPathsForDocument,
   dependencyPathsForDocuments,
@@ -34,15 +25,26 @@ import {
   documentDependenciesForCompile,
   documentsDependingOnPath,
   documentsStructurallyDependingOnPath,
+  normalizeDependencyPath,
+  requiredExactWatchPathsForDocuments
+} from "../../src/dependencyIndex";
+import {
+  clampOffset,
+  completionItemsForContent,
+  completionItemsForDocument,
+  computeDocumentHover,
+  computeDocumentSignatureHelp,
+  computeDocumentDiagnostics,
+  computeDocumentSemanticTokens,
+  definitionLocationForDocument,
+  definitionLocationsForDocument,
   encodeSemanticTokens,
   formattingConfigurationForSource,
   formattingEditsForDocument,
   handleSemanticWatchedFileBatch,
   identifierAtOffset,
-  normalizeDependencyPath,
   prepareRenameForDocument,
   referenceLocationsForDocument,
-  requiredExactWatchPathsForDocuments,
   renameEditsForDocument,
   toLspDefinitionLocation,
   toLspDefinitionLocations,
@@ -1595,6 +1597,37 @@ describe("RSGL LSP server core", () => {
     assert.strictEqual(identifierAtOffset(text, start + 5), "stateSequence");
     assert.strictEqual(identifierAtOffset(text, start + "stateSequence".length), "stateSequence");
     assert.strictEqual(identifierAtOffset(text, text.length), null);
+  });
+
+  it("preserves feature-specific fallbacks when core language computation fails", () => {
+    const document = {
+      getText(): never {
+        throw new Error("document read failed");
+      },
+      positionAt() {
+        return { line: 0, character: 0 };
+      }
+    };
+    const fileName = "broken.rsgl";
+    const unreachableWorkspace = {
+      loadProgramFromEntry(): never {
+        throw new Error("semantic load should not escape");
+      }
+    };
+
+    assert.strictEqual(computeDocumentHover(document, fileName, 4, unreachableWorkspace), null);
+    assert.strictEqual(computeDocumentSignatureHelp(document, fileName, 4, unreachableWorkspace), null);
+    assert.deepStrictEqual(definitionLocationsForDocument(document, fileName, 4, unreachableWorkspace), []);
+    assert.deepStrictEqual(
+      referenceLocationsForDocument(document, fileName, 4, true, unreachableWorkspace),
+      []
+    );
+    assert.strictEqual(prepareRenameForDocument(document, fileName, 4, unreachableWorkspace), null);
+    assert.strictEqual(
+      renameEditsForDocument(document, fileName, 4, "renamed", unreachableWorkspace),
+      null
+    );
+    assert.deepStrictEqual(computeDocumentSemanticTokens(document, fileName, unreachableWorkspace), []);
   });
 
   it("converts linked hover, signatures, and cross-file definitions with UTF-16 positions", () => {

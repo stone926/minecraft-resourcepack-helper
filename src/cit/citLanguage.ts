@@ -73,15 +73,14 @@ export function getCitCompletionResult(
   locale?: string,
   resources: CitResourceCompletionData = {}
 ): CitCompletionResult | null {
-  const text = document.getText();
-  const lines = text.split(/\r\n|\n|\r/);
-  const lineText = lines[position.line] ?? "";
+  const parseResult = getCitPropertiesParseResult(document);
+  const lineText = parseResult.physicalLines[position.line] ?? "";
   const lineContext = getLineCompletionContext(lineText, position);
   if (!lineContext) {
     return null;
   }
 
-  const entries = getCitPropertiesParseResult(document, text).entries;
+  const entries = parseResult.entries;
   const spec = getEffectiveSpec(document.fileName, entries, locale);
   if (lineContext.kind === "key") {
     return {

@@ -45,20 +45,46 @@ describe("CIT resource ID service", () => {
       writeFile(pack, "assets/minecraft/citresewn/cit/wand.properties", "type=item\n");
       writeJson(pack, "assets/custom/items/wand.json", {});
 
-      let warmed = false;
-      const warmedPromise = new Promise<void>(resolve => {
-        citResourceIdService.warmResourceIds(citFileName, {}, () => {
-          warmed = true;
-          resolve();
-        });
+      const readyCallbacks: string[] = [];
+      const warmedPromise = citResourceIdService.warmResourceIds(citFileName, {}, {
+        key: "test-ready",
+        onReady: () => { readyCallbacks.push("superseded"); }
+      });
+      const sharedWarmup = citResourceIdService.warmResourceIds(citFileName, {}, {
+        key: "test-ready",
+        onReady: () => { readyCallbacks.push("ready"); }
       });
 
-      assert.strictEqual(warmed, false);
+      assert.strictEqual(sharedWarmup, warmedPromise);
+      assert.deepStrictEqual(readyCallbacks, []);
       assert.strictEqual(citResourceIdService.getCachedResourceIds(citFileName), null);
 
       await warmedPromise;
-      assert.strictEqual(warmed, true);
+      assert.deepStrictEqual(readyCallbacks, ["ready"]);
       assert.strictEqual(citResourceIdService.getCachedResourceIds(citFileName)?.items.includes("custom:wand"), true);
+    } finally {
+      removeTempDirectory(root);
+    }
+  });
+
+  it("shares one resource inventory across many CIT documents in the same pack", () => {
+    const root = createTempDirectory();
+
+    try {
+      const pack = createPack(root, "pack");
+      writeJson(pack, "assets/custom/items/wand.json", {});
+      const inventories = new Set<object>();
+      for (let index = 0; index < 65; index++) {
+        const relativePath = `assets/minecraft/citresewn/cit/item-${index}.properties`;
+        writeFile(pack, relativePath, "type=item\n");
+        inventories.add(citResourceIdService.getResourceIds(path.join(pack, relativePath)));
+      }
+
+      assert.strictEqual(inventories.size, 1);
+      assert.strictEqual(
+        (inventories.values().next().value as { items: string[] }).items.includes("custom:wand"),
+        true
+      );
     } finally {
       removeTempDirectory(root);
     }
@@ -74,11 +100,26 @@ describe("CIT resource ID service", () => {
       "utf8"
     );
 
-    assert.ok(diagnosticsSource.includes("getCachedResourceIds"));
-    assert.ok(diagnosticsSource.includes("warmResourceIds"));
+    assert.ok(diagnosticsSource.includes("getResourceIdsForHotPath"));
+    assert.strictEqual(diagnosticsSource.includes("getCachedResourceIds"), false);
+    assert.strictEqual(diagnosticsSource.includes("warmResourceIds"), false);
     assert.strictEqual(diagnosticsSource.includes("getResourceIds(document.fileName"), false);
-    assert.ok(completionSource.includes("getCachedResourceIds"));
-    assert.ok(completionSource.includes("warmResourceIds"));
+    assert.ok(completionSource.includes("getResourceIdsForHotPath"));
+    assert.strictEqual(completionSource.includes("pendingCompletionRefreshes"), false);
+    assert.strictEqual(completionSource.includes("getCachedResourceIds"), false);
+    assert.strictEqual(completionSource.includes("warmResourceIds"), false);
     assert.strictEqual(completionSource.includes("getResourceIds(document.fileName"), false);
+  });
+
+  it("loads builtin IDs and armor classification rules from the catalog", () => {
+    const builtins = citResourceIdService.getBuiltinResourceIds();
+
+    assert.ok(builtins.items.includes("minecraft:stick"));
+    assert.ok(builtins.enchantments.includes("minecraft:sharpness"));
+    assert.strictEqual(citResourceIdService.isArmorItem("chainmail_helmet"), true);
+    assert.strictEqual(citResourceIdService.isArmorItem("minecraft:turtle_helmet"), true);
+    assert.strictEqual(citResourceIdService.isArmorItem("custom:ceremonial_boots"), true);
+    assert.strictEqual(citResourceIdService.isArmorItem("minecraft:elytra"), false);
+    assert.strictEqual(citResourceIdService.isArmorItem("minecraft:stick"), false);
   });
 });

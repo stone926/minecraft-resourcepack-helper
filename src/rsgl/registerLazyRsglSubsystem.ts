@@ -2,6 +2,7 @@ import { reportBackgroundError } from "../utils/backgroundErrors";
 import * as vscode from "vscode";
 import type { ResourceInfrastructure } from "../registration/registerResourceInfrastructure";
 import type { ResourceUniverseRefreshResult } from "../resourceUniverse/core/resourceUniverseService";
+import { asDisposable } from "../utils/asyncShutdown";
 import { affectsResourceResolutionConfiguration } from "../utils/resourceConfigurationKeys";
 import {
   configuredRsglMode,
@@ -94,6 +95,14 @@ export function registerLazyRsglSubsystem(
     })
   );
 
+  const shutdownRegistration = async (): Promise<void> => {
+    disposeSignals();
+    await shutdownSubsystem();
+  };
+  const shutdownDisposable = asDisposable(
+    shutdownRegistration,
+    error => console.error("Failed to shut down the integrated RSGL subsystem.", error)
+  );
   const registration: LazyRsglSubsystemRegistration = {
     refreshGeneratedProject: async (projectId, signal, causeId) => {
       if (disposed || signal?.aborted) {
@@ -105,16 +114,8 @@ export function registerLazyRsglSubsystem(
       }
       return loaded.refreshGeneratedProject(projectId, signal, causeId);
     },
-    dispose: () => {
-      disposeSignals();
-      void shutdownSubsystem().catch(error => {
-        console.error("Failed to shut down the integrated RSGL subsystem.", error);
-      });
-    },
-    shutdown: async () => {
-      disposeSignals();
-      await shutdownSubsystem();
-    }
+    dispose: () => shutdownDisposable.dispose(),
+    shutdown: () => shutdownDisposable.shutdown()
   };
   context.subscriptions.push(registration);
 
@@ -297,4 +298,3 @@ function hasKnownRsglDocument(): boolean {
 function runInBackground(promise: Promise<unknown>, message: string): void {
   void promise.catch(error => reportBackgroundError(message, error));
 }
-

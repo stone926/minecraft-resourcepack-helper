@@ -23,14 +23,20 @@ export function getCitDiagnostics(
   }
 
   const configuration = getResourceConfiguration();
-  const cachedResourceIds = citResourceIdService.getCachedResourceIds(document.fileName, configuration);
-  if (!cachedResourceIds) {
-    citResourceIdService.warmResourceIds(document.fileName, configuration, options.onResourceIdsReady);
-  }
+  const resourceIds = citResourceIdService.getResourceIdsForHotPath(
+    document.fileName,
+    configuration,
+    options.onResourceIdsReady
+      ? {
+          key: `diagnostics\0${document.uri.toString()}`,
+          onReady: options.onResourceIdsReady
+        }
+      : undefined
+  );
 
   return getCoreCitDiagnostics(document, {
     locale: vscode.env.language,
-    resourceIds: cachedResourceIds ?? citResourceIdService.getBuiltinResourceIds()
+    resourceIds
   }).map(toVsCodeDiagnostic);
 }
 

@@ -217,7 +217,7 @@ describe("repository build graph", () => {
     const hostResult = await build(bundles.createEsbuildOptions(
       bundles.bundleEntryDefinitions.rsglHost,
       "production",
-      { write: false, sourcemap: false }
+      { write: false, sourcemap: false, metafile: true }
     ));
     const unsharedHostResult = await build(bundles.createEsbuildOptions(
       bundles.bundleEntryDefinitions.rsglHost,
@@ -229,6 +229,12 @@ describe("repository build graph", () => {
       ?.find(file => file.path.endsWith("rsglHost.js"));
     assert.ok(hostOutput, "RSGL host build should return its CommonJS entry");
     assert.ok(unsharedHostOutput, "unshared RSGL host comparison should return its entry");
+    assert.strictEqual(
+      Object.keys(hostResult.metafile?.inputs ?? {})
+        .some(input => input.replaceAll("\\", "/").startsWith("src/registration/")),
+      false,
+      "the lazy RSGL host must not pull in the root registration layer"
+    );
     assert.ok(
       (hostOutput.text.match(/require\("vscode"\)/g)?.length ?? 0)
         < (unsharedHostOutput.text.match(/require\("vscode"\)/g)?.length ?? 0),

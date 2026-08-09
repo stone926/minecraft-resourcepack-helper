@@ -94,6 +94,7 @@ describe("main VSIX stage assembler", () => {
       "LICENSE",
       "README.md",
       "README_CN.md",
+      "assets/cit/builtin-resource-ids.json",
       "assets/cit/en/base.json",
       "assets/linters/en/schema.json",
       "assets/mcResHelperSidebar.svg",
@@ -405,6 +406,13 @@ describe("main VSIX stage assembler", () => {
       writeFile(root, `${bundle}.map`, `map:${bundle}\n`);
     }
     writeJson(root, "assets/linters/en/schema.json", { title: "Schema", type: "object" }, true);
+    writeJson(root, "assets/cit/builtin-resource-ids.json", {
+      schemaVersion: 1,
+      defaultNamespace: "minecraft",
+      items: ["stick"],
+      enchantments: ["sharpness"],
+      armorSuffixes: ["_helmet"]
+    }, true);
     writeJson(root, "assets/cit/en/base.json", { id: "base", keys: {} }, true);
     writeJson(root, "language-configuration/rsgl.json", { comments: { lineComment: "//" } }, true);
     writeJson(root, "syntaxes/rsgl.tmLanguage.json", { scopeName: "source.rsgl", patterns: [] }, true);

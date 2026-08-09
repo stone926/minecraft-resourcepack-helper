@@ -383,6 +383,7 @@ export class ResourceUniverseService {
     }
     this.requestStates.clear();
     this.generationListeners.clear();
+    this.knownProviderProjects.clear();
     this.listeners.clear();
   }
 

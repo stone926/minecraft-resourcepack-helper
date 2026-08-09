@@ -5,7 +5,7 @@ import type {
   GeneratedResourceProjectRefresher,
   ResourceUniverseNavigation,
   UnifiedResourceProducerTarget
-} from "../services/resourceUniverseNavigationFacade";
+} from "../services/resourceUniverseNavigation";
 import type { ResourceInfrastructure } from "./registerResourceInfrastructure";
 
 export interface ResourceNavigationInfrastructure extends vscode.Disposable {

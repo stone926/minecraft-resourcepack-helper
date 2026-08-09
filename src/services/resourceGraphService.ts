@@ -5,7 +5,7 @@ import { packRootFromAssetsPath } from "../../packages/mc-assets/src";
 import type {
   ResourceUniverseNavigation,
   UnifiedResolvedReference
-} from "./resourceUniverseNavigationFacade";
+} from "./resourceUniverseNavigation";
 import type { ResourceLocation, ResourceNavigationResult } from "../resourceUniverse";
 import { sameResourceUri } from "../resourceUniverse/core/resourceUriIdentity";
 import {

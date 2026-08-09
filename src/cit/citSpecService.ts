@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { isCitGlobalPropertiesFileName } from "./citDocumentPaths";
+import { resolveBundledCitAssetRoot } from "./citAssetRoot";
 import type {
   CitSpecFragment,
   CitSpecKey,
@@ -157,19 +158,6 @@ export class CitSpecService {
 }
 
 export const citSpecService = new CitSpecService();
-
-function resolveBundledCitAssetRoot(): string {
-  for (const candidate of [
-    path.join(__dirname, "..", "..", "..", "assets", "cit"),
-    path.join(__dirname, "..", "..", "assets", "cit"),
-    path.join(process.cwd(), "assets", "cit")
-  ]) {
-    if (fs.existsSync(candidate)) {
-      return candidate;
-    }
-  }
-  return path.join(process.cwd(), "assets", "cit");
-}
 
 function mergeFragments(
   scope: CitSpecScope,

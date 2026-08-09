@@ -47,6 +47,7 @@ import {
   type RsglDefinitionLocation,
   type RsglFormattingConfiguration,
   type RsglFormatOptions,
+  type RsglLanguageDocument,
   type RsglLanguageWorkspace,
   type RsglProgramCompileOptions,
   type RsglReferenceLocation,
@@ -118,6 +119,21 @@ export type RsglDocumentCompletionDeps = RsglLanguageWorkspace;
 
 /** Injected collaborators shared by hover, signature help, and definition lookup. */
 export type RsglDocumentLanguageIntelligenceDeps = RsglDocumentCompletionDeps;
+
+function coreDocument(document: RsglLspDocument, fileName: string): RsglLanguageDocument {
+  return {
+    fileName,
+    getText: () => document.getText()
+  };
+}
+
+function safeLanguageFeature<TResult>(compute: () => TResult, fallback: TResult): TResult {
+  try {
+    return compute();
+  } catch {
+    return fallback;
+  }
+}
 
 /** Normalizes an untyped settings payload into safe validation settings. */
 export function toValidationSettings(value: unknown): RsglValidationSettings {
@@ -244,25 +260,6 @@ function isSerializedWorkspaceUri(value: unknown): value is string {
     && /^[a-zA-Z][a-zA-Z\d+.-]*:/.test(value)
     && !/^[a-zA-Z]:[\\/]/.test(value);
 }
-
-export {
-  dependencyInvalidationPathsForStructuralChange,
-  dependencyPathsForDocument,
-  dependencyPathsForDocuments,
-  dependencyPatternsForDocuments,
-  documentDependenciesEqual,
-  documentDependenciesExpanded,
-  documentDependenciesForCompile,
-  documentsDependingOnPath,
-  documentsStructurallyDependingOnPath,
-  normalizeDependencyPath,
-  requiredExactWatchPathsForDocuments
-} from "./dependencyIndex";
-export type {
-  RsglDependencyWatchPattern,
-  RsglDocumentDependencies,
-  RsglDocumentDependencyIndex
-} from "./dependencyIndex";
 
 export interface RsglSemanticWatchBatchCallbacks {
   invalidatePath(fileName: string): void;
@@ -463,10 +460,11 @@ export function completionItemsForDocument(
   offset: number,
   deps: RsglDocumentCompletionDeps
 ): CompletionItem[] {
-  return getRsglDocumentCompletionItems({
-    fileName,
-    getText: () => document.getText()
-  }, offset, deps).map(toCompletionItem);
+  return getRsglDocumentCompletionItems(
+    coreDocument(document, fileName),
+    offset,
+    deps
+  ).map(toCompletionItem);
 }
 
 /** Formats a document and converts the result into an LSP full-document edit. */
@@ -510,11 +508,8 @@ export function computeDocumentHover(
   offset: number,
   deps: RsglDocumentLanguageIntelligenceDeps
 ): Hover | null {
-  try {
-    const hover = getRsglDocumentHoverInfo({
-      fileName,
-      getText: () => document.getText()
-    }, offset, deps);
+  return safeLanguageFeature<Hover | null>(() => {
+    const hover = getRsglDocumentHoverInfo(coreDocument(document, fileName), offset, deps);
     if (!hover) {
       return null;
     }
@@ -529,9 +524,7 @@ export function computeDocumentHover(
         end: document.positionAt(clampOffset(document, hover.range.end))
       }
     };
-  } catch {
-    return null;
-  }
+  }, null);
 }
 
 /** Computes semantic signature help for template and function-valued calls. */
@@ -541,11 +534,8 @@ export function computeDocumentSignatureHelp(
   offset: number,
   deps: RsglDocumentLanguageIntelligenceDeps
 ): SignatureHelp | null {
-  try {
-    const help = getRsglDocumentSignatureHelpInfo({
-      fileName,
-      getText: () => document.getText()
-    }, offset, deps);
+  return safeLanguageFeature<SignatureHelp | null>(() => {
+    const help = getRsglDocumentSignatureHelpInfo(coreDocument(document, fileName), offset, deps);
     if (!help) {
       return null;
     }
@@ -558,9 +548,7 @@ export function computeDocumentSignatureHelp(
       activeSignature: help.activeSignature,
       activeParameter: help.activeParameter
     };
-  } catch {
-    return null;
-  }
+  }, null);
 }
 
 /** Returns an offset-based definition; target-document conversion is intentionally separate. */
@@ -608,14 +596,10 @@ export function definitionLocationsForDocument(
   offset: number,
   deps: RsglDocumentLanguageIntelligenceDeps
 ): RsglDefinitionLocation[] {
-  try {
-    return getRsglDocumentDefinitionLocations({
-      fileName,
-      getText: () => document.getText()
-    }, offset, deps);
-  } catch {
-    return [];
-  }
+  return safeLanguageFeature<RsglDefinitionLocation[]>(
+    () => getRsglDocumentDefinitionLocations(coreDocument(document, fileName), offset, deps),
+    []
+  );
 }
 
 /** Converts a core definition range using the target document's UTF-16 position mapping. */
@@ -643,14 +627,15 @@ export function referenceLocationsForDocument(
   includeDeclaration: boolean,
   deps: RsglDocumentLanguageIntelligenceDeps
 ): RsglReferenceLocation[] {
-  try {
-    return getRsglDocumentReferenceLocations({
-      fileName,
-      getText: () => document.getText()
-    }, offset, includeDeclaration, deps);
-  } catch {
-    return [];
-  }
+  return safeLanguageFeature<RsglReferenceLocation[]>(
+    () => getRsglDocumentReferenceLocations(
+      coreDocument(document, fileName),
+      offset,
+      includeDeclaration,
+      deps
+    ),
+    []
+  );
 }
 
 /** A target text document used to map core offsets to LSP locations. */
@@ -699,11 +684,8 @@ export function prepareRenameForDocument(
   offset: number,
   deps: RsglDocumentLanguageIntelligenceDeps
 ): { range: Range; placeholder: string } | null {
-  try {
-    const target = prepareRsglDocumentRename({
-      fileName,
-      getText: () => document.getText()
-    }, offset, deps);
+  return safeLanguageFeature<{ range: Range; placeholder: string } | null>(() => {
+    const target = prepareRsglDocumentRename(coreDocument(document, fileName), offset, deps);
     return target
       ? {
           range: {
@@ -713,9 +695,7 @@ export function prepareRenameForDocument(
           placeholder: target.placeholder
         }
       : null;
-  } catch {
-    return null;
-  }
+  }, null);
 }
 
 /** Returns protocol-neutral rename edits; target documents are converted separately. */
@@ -726,14 +706,15 @@ export function renameEditsForDocument(
   newName: string,
   deps: RsglDocumentLanguageIntelligenceDeps
 ): RsglRenameEdit[] | null {
-  try {
-    return getRsglDocumentRenameEdits({
-      fileName,
-      getText: () => document.getText()
-    }, offset, newName, deps) ?? null;
-  } catch {
-    return null;
-  }
+  return safeLanguageFeature<RsglRenameEdit[] | null>(
+    () => getRsglDocumentRenameEdits(
+      coreDocument(document, fileName),
+      offset,
+      newName,
+      deps
+    ) ?? null,
+    null
+  );
 }
 
 /** Target document required to convert one core offset edit into an LSP edit. */
@@ -809,15 +790,10 @@ export function computeDocumentSemanticTokens(
   fileName: string,
   deps: RsglDocumentSemanticTokenDeps
 ): number[] {
-  try {
-    const tokens = getRsglDocumentSemanticTokens({
-      fileName,
-      getText: () => document.getText()
-    }, deps);
+  return safeLanguageFeature<number[]>(() => {
+    const tokens = getRsglDocumentSemanticTokens(coreDocument(document, fileName), deps);
     return encodeSemanticTokens(tokens, document);
-  } catch {
-    return [];
-  }
+  }, []);
 }
 
 /**

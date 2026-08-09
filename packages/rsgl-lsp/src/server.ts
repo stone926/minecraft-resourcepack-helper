@@ -38,12 +38,6 @@ import {
   type RsglResourceSnapshotRequest
 } from "../../rsgl-shared/src";
 import {
-  completionItemsForDocument as completionItemsForDocumentCore,
-  computeDocumentDiagnostics,
-  computeDocumentHover,
-  computeDocumentSignatureHelp,
-  computeDocumentSemanticTokens,
-  definitionLocationsForDocument,
   dependencyInvalidationPathsForStructuralChange,
   dependencyPathsForDocuments,
   dependencyPatternsForDocuments,
@@ -51,6 +45,16 @@ import {
   documentDependenciesForCompile,
   documentsDependingOnPath,
   documentsStructurallyDependingOnPath,
+  requiredExactWatchPathsForDocuments,
+  type RsglDocumentDependencies
+} from "./dependencyIndex";
+import {
+  completionItemsForDocument as completionItemsForDocumentCore,
+  computeDocumentDiagnostics,
+  computeDocumentHover,
+  computeDocumentSignatureHelp,
+  computeDocumentSemanticTokens,
+  definitionLocationsForDocument,
   fileNameFromUri,
   formattingConfigurationForSource,
   formattingEditsForDocument,
@@ -58,7 +62,6 @@ import {
   projectSemanticConfigurationFingerprint,
   referenceLocationsForDocument,
   resourceAnalysisConfigurationFor,
-  requiredExactWatchPathsForDocuments,
   prepareRenameForDocument,
   renameEditsForDocument,
   toLspDefinitionLocations,
@@ -67,7 +70,6 @@ import {
   toValidationSettings,
   validationSettingsFingerprint,
   workspaceRootFileNamesFromInitialization,
-  type RsglDocumentDependencies,
   type RsglValidationSettings
 } from "./serverCore";
 import { DirtyDiagnosticScheduler } from "./diagnosticScheduler";
@@ -336,9 +338,12 @@ connection.onHover(params => {
     return null;
   }
   const offset = document.offsetAt(params.position);
-  return computeDocumentHover(document, nativeFileNameFromUri(document.uri), offset, {
-    ...documentLanguageWorkspace()
-  });
+  return computeDocumentHover(
+    document,
+    nativeFileNameFromUri(document.uri),
+    offset,
+    documentLanguageWorkspace()
+  );
 });
 
 connection.onSignatureHelp(params => {
@@ -350,7 +355,7 @@ connection.onSignatureHelp(params => {
     document,
     nativeFileNameFromUri(document.uri),
     document.offsetAt(params.position),
-    { loadProgramFromEntry: entryFileName => loadSemanticProgram(entryFileName) }
+    documentLanguageWorkspace()
   );
 });
 
@@ -419,7 +424,7 @@ connection.onPrepareRename(params => {
     document,
     nativeFileNameFromUri(document.uri),
     document.offsetAt(params.position),
-    { loadProgramFromEntry: entryFileName => loadSemanticProgram(entryFileName) }
+    documentLanguageWorkspace()
   );
 });
 
@@ -433,7 +438,7 @@ connection.onRenameRequest(async params => {
     nativeFileNameFromUri(document.uri),
     document.offsetAt(params.position),
     params.newName,
-    { loadProgramFromEntry: entryFileName => loadSemanticProgram(entryFileName) }
+    documentLanguageWorkspace()
   );
   return edits ? toLspWorkspaceEdit(edits, loadLanguageDocument) : null;
 });
@@ -444,9 +449,11 @@ connection.languages.semanticTokens.on(params => {
     return { data: [] };
   }
   return {
-    data: computeDocumentSemanticTokens(document, nativeFileNameFromUri(document.uri), {
-      loadProgramFromEntry: entryFileName => loadSemanticProgram(entryFileName)
-    })
+    data: computeDocumentSemanticTokens(
+      document,
+      nativeFileNameFromUri(document.uri),
+      documentLanguageWorkspace()
+    )
   };
 });
 
@@ -838,11 +845,7 @@ function findOpenDocument(fileName: string): TextDocument | null {
 }
 
 async function loadLanguageDocument(fileName: string): Promise<TextDocument | null> {
-  const openDocument = findByNormalizedPath(
-    documents.all(),
-    path.resolve(fileName),
-    item => path.resolve(nativeFileNameFromUri(item.uri))
-  );
+  const openDocument = findOpenDocument(fileName);
   if (openDocument) {
     return openDocument;
   }

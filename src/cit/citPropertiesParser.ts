@@ -1,4 +1,5 @@
 import { lm, type LocalizedMessage } from "../i18n/messages";
+import { LruCache } from "../services/lruCache";
 import type { AstLocation } from "../utils/locationChecker";
 
 export interface CitPropertyEntry {
@@ -22,6 +23,8 @@ export interface CitPropertySyntaxError {
 export interface CitPropertiesParseResult {
   entries: CitPropertyEntry[];
   errors: CitPropertySyntaxError[];
+  /** Physical source lines shared by parsing and cursor-sensitive language features. */
+  physicalLines: string[];
 }
 
 export interface CitPropertiesDocument {
@@ -56,7 +59,9 @@ interface CachedCitPropertiesParseResult {
 }
 
 const maxCachedCitPropertiesDocuments = 128;
-const citPropertiesDocumentCache = new Map<string, CachedCitPropertiesParseResult>();
+const citPropertiesDocumentCache = new LruCache<string, CachedCitPropertiesParseResult>(
+  maxCachedCitPropertiesDocuments
+);
 
 export function parseCitProperties(text: string): CitPropertyEntry[] {
   return parseCitPropertiesDocument(text).entries;
@@ -65,15 +70,16 @@ export function parseCitProperties(text: string): CitPropertyEntry[] {
 export function parseCitPropertiesDocument(text: string): CitPropertiesParseResult {
   const entries: CitPropertyEntry[] = [];
   const errors: CitPropertySyntaxError[] = [];
+  const physicalLines = text.split(/\r\n|\n|\r/);
 
-  for (const logicalLine of getLogicalLines(text)) {
+  for (const logicalLine of getLogicalLines(physicalLines)) {
     const entry = parseLogicalCitPropertyLine(logicalLine, errors);
     if (entry) {
       entries.push(entry);
     }
   }
 
-  return { entries, errors };
+  return { entries, errors, physicalLines };
 }
 
 export function getCitPropertiesParseResult(document: CitPropertiesDocument, text?: string): CitPropertiesParseResult {
@@ -84,14 +90,11 @@ export function getCitPropertiesParseResult(document: CitPropertiesDocument, tex
   const key = citPropertiesCacheKey(document);
   const cached = citPropertiesDocumentCache.get(key);
   if (cached && cached.version === document.version) {
-    citPropertiesDocumentCache.delete(key);
-    citPropertiesDocumentCache.set(key, cached);
     return cached.result;
   }
 
   const result = parseCitPropertiesDocument(text ?? document.getText());
   citPropertiesDocumentCache.set(key, { version: document.version, result });
-  trimCitPropertiesDocumentCache();
   return result;
 }
 
@@ -152,16 +155,6 @@ function findUnescapedSeparator(line: string, separator: "=" | ":", start: numbe
 
 function citPropertiesCacheKey(document: CitPropertiesDocument): string {
   return document.uri?.toString() ?? document.fileName;
-}
-
-function trimCitPropertiesDocumentCache(): void {
-  while (citPropertiesDocumentCache.size > maxCachedCitPropertiesDocuments) {
-    const oldest = citPropertiesDocumentCache.keys().next().value;
-    if (oldest === undefined) {
-      return;
-    }
-    citPropertiesDocumentCache.delete(oldest);
-  }
 }
 
 export function firstNonWhitespaceIndex(value: string, start = 0): number {
@@ -251,8 +244,7 @@ function validatePropertyKey(
   }
 }
 
-function getLogicalLines(text: string): LogicalCitPropertyLine[] {
-  const lines = text.split(/\r\n|\n|\r/);
+function getLogicalLines(lines: readonly string[]): LogicalCitPropertyLine[] {
   const logicalLines: LogicalCitPropertyLine[] = [];
   let current: LogicalCitPropertyLine | null = null;
 

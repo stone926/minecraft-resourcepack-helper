@@ -12,7 +12,7 @@ import { throwIfAborted } from "../utils/abortError";
 import type {
   ResourceUniverseNavigation,
   UnifiedResourceInventory
-} from "./resourceUniverseNavigationFacade";
+} from "./resourceUniverseNavigation";
 import { LruCache } from "./lruCache";
 import {
   isResourceSearchKind,

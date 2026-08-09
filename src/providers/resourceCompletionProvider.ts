@@ -5,7 +5,7 @@ import {
   ResourceCompletionService,
   type ResourceCompletionCandidate
 } from "../services/resourceCompletionService";
-import type { ResourceUniverseNavigation } from "../services/resourceUniverseNavigationFacade";
+import type { ResourceUniverseNavigation } from "../services/resourceUniverseNavigation";
 import { workspaceResourceCache } from "../services/workspaceResourceCache";
 import {
   inferIncompleteResourceCompletionContext,

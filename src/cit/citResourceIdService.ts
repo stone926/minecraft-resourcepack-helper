@@ -6,7 +6,12 @@ import {
   normalizePathKey,
   uniqueValues
 } from "../../packages/mc-assets/src";
+import { LruCache } from "../services/lruCache";
 import { workspaceResourceCache } from "../services/workspaceResourceCache";
+import {
+  loadCitBuiltinResourceCatalog,
+  type CitBuiltinResourceCatalog
+} from "./citBuiltinResourceCatalog";
 
 export interface CitResourceIdConfiguration {
   defaultAssetsPath?: string | null;
@@ -19,9 +24,6 @@ export interface CitResourceIds {
 }
 
 interface CachedResourceIds {
-  cacheKey: string;
-  generation: number;
-  configurationVersion: number;
   ids: CitResourceIds;
 }
 
@@ -29,191 +31,32 @@ interface ResourceIdCacheContext {
   cacheKey: string;
   generation: number;
   configurationVersion: number;
+  documentPackRoot: string | null;
 }
 
 interface PendingWarmResourceIds {
-  callbacks: Set<() => void>;
+  promise: Promise<CitResourceIds>;
+  readyCallbacks: Map<string, () => void>;
 }
 
-const builtinEnchantments = [
-  "aqua_affinity",
-  "bane_of_arthropods",
-  "binding_curse",
-  "blast_protection",
-  "breach",
-  "channeling",
-  "density",
-  "depth_strider",
-  "efficiency",
-  "feather_falling",
-  "fire_aspect",
-  "fire_protection",
-  "flame",
-  "fortune",
-  "frost_walker",
-  "impaling",
-  "infinity",
-  "knockback",
-  "looting",
-  "loyalty",
-  "luck_of_the_sea",
-  "lure",
-  "mending",
-  "multishot",
-  "piercing",
-  "power",
-  "projectile_protection",
-  "protection",
-  "punch",
-  "quick_charge",
-  "respiration",
-  "riptide",
-  "sharpness",
-  "silk_touch",
-  "smite",
-  "soul_speed",
-  "sweeping_edge",
-  "swift_sneak",
-  "thorns",
-  "unbreaking",
-  "vanishing_curse",
-  "wind_burst"
-].map(id => `minecraft:${id}`);
+export interface CitResourceIdsReadySubscriber {
+  /** Stable consumer identity; a newer callback replaces an older pending one. */
+  key: string;
+  onReady(): void;
+}
 
-const builtinItemIds = [
-  "air",
-  "apple",
-  "arrow",
-  "baked_potato",
-  "beef",
-  "blaze_powder",
-  "blaze_rod",
-  "bow",
-  "bread",
-  "brush",
-  "bucket",
-  "carrot",
-  "coal",
-  "compass",
-  "crossbow",
-  "diamond",
-  "diamond_axe",
-  "diamond_boots",
-  "diamond_chestplate",
-  "diamond_helmet",
-  "diamond_hoe",
-  "diamond_leggings",
-  "diamond_pickaxe",
-  "diamond_shovel",
-  "diamond_sword",
-  "egg",
-  "elytra",
-  "emerald",
-  "enchanted_book",
-  "ender_pearl",
-  "fishing_rod",
-  "flint_and_steel",
-  "gold_ingot",
-  "golden_apple",
-  "golden_axe",
-  "golden_boots",
-  "golden_carrot",
-  "golden_chestplate",
-  "golden_helmet",
-  "golden_hoe",
-  "golden_leggings",
-  "golden_pickaxe",
-  "golden_shovel",
-  "golden_sword",
-  "iron_axe",
-  "iron_boots",
-  "iron_chestplate",
-  "iron_helmet",
-  "iron_hoe",
-  "iron_ingot",
-  "iron_leggings",
-  "iron_pickaxe",
-  "iron_shovel",
-  "iron_sword",
-  "leather",
-  "leather_boots",
-  "leather_chestplate",
-  "leather_helmet",
-  "leather_leggings",
-  "mace",
-  "map",
-  "milk_bucket",
-  "name_tag",
-  "netherite_axe",
-  "netherite_boots",
-  "netherite_chestplate",
-  "netherite_helmet",
-  "netherite_hoe",
-  "netherite_ingot",
-  "netherite_leggings",
-  "netherite_pickaxe",
-  "netherite_shovel",
-  "netherite_sword",
-  "potion",
-  "shield",
-  "snowball",
-  "splash_potion",
-  "stick",
-  "stone_axe",
-  "stone_hoe",
-  "stone_pickaxe",
-  "stone_shovel",
-  "stone_sword",
-  "tipped_arrow",
-  "totem_of_undying",
-  "trident",
-  "turtle_helmet",
-  "water_bucket",
-  "wooden_axe",
-  "wooden_hoe",
-  "wooden_pickaxe",
-  "wooden_shovel",
-  "wooden_sword",
-  "writable_book",
-  "written_book"
-].map(id => `minecraft:${id}`);
+const maxCachedResourceIdContexts = 64;
 
-const builtinResourceIds: CitResourceIds = {
-  items: builtinItemIds,
-  enchantments: builtinEnchantments
-};
-
-const builtinArmorItems = new Set([
-  "minecraft:leather_helmet",
-  "minecraft:leather_chestplate",
-  "minecraft:leather_leggings",
-  "minecraft:leather_boots",
-  "minecraft:chainmail_helmet",
-  "minecraft:chainmail_chestplate",
-  "minecraft:chainmail_leggings",
-  "minecraft:chainmail_boots",
-  "minecraft:iron_helmet",
-  "minecraft:iron_chestplate",
-  "minecraft:iron_leggings",
-  "minecraft:iron_boots",
-  "minecraft:golden_helmet",
-  "minecraft:golden_chestplate",
-  "minecraft:golden_leggings",
-  "minecraft:golden_boots",
-  "minecraft:diamond_helmet",
-  "minecraft:diamond_chestplate",
-  "minecraft:diamond_leggings",
-  "minecraft:diamond_boots",
-  "minecraft:netherite_helmet",
-  "minecraft:netherite_chestplate",
-  "minecraft:netherite_leggings",
-  "minecraft:netherite_boots",
-  "minecraft:turtle_helmet"
-]);
-
-class CitResourceIdService {
-  private cached: CachedResourceIds | null = null;
+export class CitResourceIdService {
+  private readonly cached = new LruCache<string, CachedResourceIds>(maxCachedResourceIdContexts);
   private readonly pendingWarmups = new Map<string, PendingWarmResourceIds>();
+  private builtinCatalog: CitBuiltinResourceCatalog | undefined;
+  private builtinResourceIds: CitResourceIds | undefined;
+
+  public constructor(
+    private readonly loadBuiltinCatalog: () => CitBuiltinResourceCatalog =
+      loadCitBuiltinResourceCatalog
+  ) {}
 
   getResourceIds(documentFileName: string, configuration: CitResourceIdConfiguration = {}): CitResourceIds {
     const context = this.getCacheContext(documentFileName, configuration);
@@ -222,8 +65,12 @@ class CitResourceIdService {
       return cached;
     }
 
-    const ids = collectResourceIds(documentFileName, configuration);
-    this.cached = { ...context, ids };
+    const ids = collectResourceIds(
+      context.documentPackRoot,
+      configuration,
+      this.getBuiltinCatalog()
+    );
+    this.cached.set(this.getWarmupKey(context), { ids });
     return ids;
   }
 
@@ -232,42 +79,75 @@ class CitResourceIdService {
   }
 
   getBuiltinResourceIds(): CitResourceIds {
-    return builtinResourceIds;
+    const catalog = this.getBuiltinCatalog();
+    return this.builtinResourceIds ??= {
+      items: catalog.items,
+      enchantments: catalog.enchantments
+    };
+  }
+
+  /** Returns immediately for editor hot paths and schedules one shared warmup on a miss. */
+  getResourceIdsForHotPath(
+    documentFileName: string,
+    configuration: CitResourceIdConfiguration = {},
+    readySubscriber?: CitResourceIdsReadySubscriber
+  ): CitResourceIds {
+    const cached = this.getCachedResourceIds(documentFileName, configuration);
+    if (cached) {
+      return cached;
+    }
+    void this.warmResourceIds(documentFileName, configuration, readySubscriber).catch(error => {
+      console.error("Failed to warm CIT resource IDs.", error);
+    });
+    return this.getBuiltinResourceIds();
   }
 
   warmResourceIds(
     documentFileName: string,
     configuration: CitResourceIdConfiguration = {},
-    onReady?: () => void
-  ): void {
+    readySubscriber?: CitResourceIdsReadySubscriber
+  ): Promise<CitResourceIds> {
     const context = this.getCacheContext(documentFileName, configuration);
-    if (this.getCachedResourceIdsForContext(context)) {
-      return;
+    const cached = this.getCachedResourceIdsForContext(context);
+    if (cached) {
+      return Promise.resolve(cached);
     }
 
     const warmupKey = this.getWarmupKey(context);
     const pending = this.pendingWarmups.get(warmupKey);
     if (pending) {
-      if (onReady) {
-        pending.callbacks.add(onReady);
-      }
-      return;
+      registerReadySubscriber(pending, readySubscriber);
+      return pending.promise;
     }
 
-    const callbacks = new Set<() => void>();
-    if (onReady) {
-      callbacks.add(onReady);
-    }
-    this.pendingWarmups.set(warmupKey, { callbacks });
-
-    setTimeout(() => {
-      const current = this.pendingWarmups.get(warmupKey);
-      this.pendingWarmups.delete(warmupKey);
-      this.getResourceIds(documentFileName, configuration);
-      for (const callback of current?.callbacks ?? []) {
-        callback();
+    const readyCallbacks = new Map<string, () => void>();
+    const warmup: PendingWarmResourceIds = {
+      promise: new Promise<CitResourceIds>((resolve, reject) => {
+        setTimeout(() => {
+          try {
+            resolve(this.getResourceIds(documentFileName, configuration));
+          } catch (error) {
+            reject(error);
+          }
+        }, 0);
+      }),
+      readyCallbacks
+    };
+    warmup.promise = warmup.promise.then(ids => {
+      if (this.pendingWarmups.get(warmupKey) === warmup) {
+        this.pendingWarmups.delete(warmupKey);
       }
-    }, 0);
+      notifyReadySubscribers(warmup);
+      return ids;
+    }, error => {
+      if (this.pendingWarmups.get(warmupKey) === warmup) {
+        this.pendingWarmups.delete(warmupKey);
+      }
+      throw error;
+    });
+    registerReadySubscriber(warmup, readySubscriber);
+    this.pendingWarmups.set(warmupKey, warmup);
+    return warmup.promise;
   }
 
   normalizeItemId(value: string): string {
@@ -280,33 +160,22 @@ class CitResourceIdService {
 
   isArmorItem(value: string): boolean {
     const id = normalizeResourceId(value);
-    if (builtinArmorItems.has(id)) {
-      return true;
-    }
-    if (id === "minecraft:elytra") {
-      return false;
-    }
-    return /_(?:helmet|chestplate|leggings|boots)$/.test(id);
+    const catalog = this.getBuiltinCatalog();
+    return catalog.armorSuffixes.some(suffix => id.endsWith(suffix));
   }
 
   private getCacheContext(documentFileName: string, configuration: CitResourceIdConfiguration): ResourceIdCacheContext {
+    const documentPackRoot = resolveDocumentPackRoot(documentFileName);
     return {
-      cacheKey: getCacheKey(documentFileName, configuration),
+      cacheKey: getCacheKey(documentPackRoot, configuration),
       generation: workspaceResourceCache.getResourceIndexGeneration(),
-      configurationVersion: workspaceResourceCache.getConfigurationVersion()
+      configurationVersion: workspaceResourceCache.getConfigurationVersion(),
+      documentPackRoot
     };
   }
 
   private getCachedResourceIdsForContext(context: ResourceIdCacheContext): CitResourceIds | null {
-    if (
-      this.cached &&
-      this.cached.cacheKey === context.cacheKey &&
-      this.cached.generation === context.generation &&
-      this.cached.configurationVersion === context.configurationVersion
-    ) {
-      return this.cached.ids;
-    }
-    return null;
+    return this.cached.get(this.getWarmupKey(context))?.ids ?? null;
   }
 
   private getWarmupKey(context: ResourceIdCacheContext): string {
@@ -316,14 +185,22 @@ class CitResourceIdService {
       context.configurationVersion
     ].join("\0");
   }
+
+  private getBuiltinCatalog(): CitBuiltinResourceCatalog {
+    return this.builtinCatalog ??= this.loadBuiltinCatalog();
+  }
 }
 
 export const citResourceIdService = new CitResourceIdService();
 
-function collectResourceIds(documentFileName: string, configuration: CitResourceIdConfiguration): CitResourceIds {
-  const items = new Set(builtinItemIds);
-  const enchantments = new Set(builtinEnchantments);
-  const roots = getAssetsRoots(documentFileName, configuration);
+function collectResourceIds(
+  documentPackRoot: string | null,
+  configuration: CitResourceIdConfiguration,
+  builtinCatalog: CitBuiltinResourceCatalog
+): CitResourceIds {
+  const items = new Set(builtinCatalog.items);
+  const enchantments = new Set(builtinCatalog.enchantments);
+  const roots = getAssetsRoots(documentPackRoot, configuration);
 
   for (const assetsRoot of roots) {
     collectAssetJsonIds(assetsRoot, ["items"], items);
@@ -336,6 +213,26 @@ function collectResourceIds(documentFileName: string, configuration: CitResource
     items: [...items].sort(),
     enchantments: [...enchantments].sort()
   };
+}
+
+function registerReadySubscriber(
+  warmup: PendingWarmResourceIds,
+  subscriber: CitResourceIdsReadySubscriber | undefined
+): void {
+  if (subscriber) {
+    warmup.readyCallbacks.set(subscriber.key, subscriber.onReady);
+  }
+}
+
+function notifyReadySubscribers(warmup: PendingWarmResourceIds): void {
+  for (const callback of warmup.readyCallbacks.values()) {
+    try {
+      callback();
+    } catch (error) {
+      console.error("A CIT resource ID ready subscriber failed.", error);
+    }
+  }
+  warmup.readyCallbacks.clear();
 }
 
 function collectAssetJsonIds(assetsRoot: string, directorySegments: string[], target: Set<string>): void {
@@ -380,11 +277,13 @@ function collectJsonIds(directory: string, namespace: string, prefix: string, ta
   }
 }
 
-function getAssetsRoots(documentFileName: string, configuration: CitResourceIdConfiguration): string[] {
+function getAssetsRoots(
+  documentPackRoot: string | null,
+  configuration: CitResourceIdConfiguration
+): string[] {
   const roots: string[] = [];
-  const packRoot = resolveCitPackRoot(documentFileName, fileName => workspaceResourceCache.getPackRoot(fileName));
-  if (packRoot) {
-    addAssetsRootCandidates(roots, packRoot);
+  if (documentPackRoot) {
+    addAssetsRootCandidates(roots, documentPackRoot);
   }
   for (const root of configuration.resourcePackRoots ?? []) {
     addAssetsRootCandidates(roots, root);
@@ -412,10 +311,23 @@ function joinResourcePath(left: string, right: string): string {
   return left.length > 0 ? `${left}/${right}` : right;
 }
 
-function getCacheKey(documentFileName: string, configuration: CitResourceIdConfiguration): string {
-  return [
-    normalizePathKey(documentFileName),
-    configuration.defaultAssetsPath ? normalizePathKey(configuration.defaultAssetsPath) : "",
-    (configuration.resourcePackRoots ?? []).map(root => normalizePathKey(root)).join("|")
-  ].join("\0");
+function resolveDocumentPackRoot(documentFileName: string): string | null {
+  return resolveCitPackRoot(
+    documentFileName,
+    fileName => workspaceResourceCache.getPackRoot(fileName)
+  );
+}
+
+function getCacheKey(
+  documentPackRoot: string | null,
+  configuration: CitResourceIdConfiguration
+): string {
+  return JSON.stringify({
+    documentPackRoot: documentPackRoot ? normalizePathKey(documentPackRoot) : null,
+    defaultAssetsPath: configuration.defaultAssetsPath
+      ? normalizePathKey(configuration.defaultAssetsPath)
+      : null,
+    resourcePackRoots: (configuration.resourcePackRoots ?? [])
+      .map(root => normalizePathKey(root))
+  });
 }

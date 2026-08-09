@@ -1,7 +1,7 @@
 import { reportBackgroundError } from "../utils/backgroundErrors";
 import * as vscode from "vscode";
 import { isSemanticDiagnosticsDocument } from "../diagnostics/semanticDiagnosticsCore";
-import type { ResourceUniverseNavigation } from "../services/resourceUniverseNavigationFacade";
+import type { ResourceUniverseNavigation } from "../services/resourceUniverseNavigation";
 import { isResourceGraphDocumentPath } from "../utils/resourceGraphSearch";
 import type { ResourceGraphTreeItem } from "../views/resourceGraphTreeItem";
 import { DeferredRegistrationOwner } from "./deferredRegistrationOwner";
@@ -154,4 +154,3 @@ function isDeferredResourceDocument(document: vscode.TextDocument): boolean {
   return isResourceGraphDocumentPath(document.fileName)
     || isSemanticDiagnosticsDocument(document);
 }
-

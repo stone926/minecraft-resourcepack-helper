@@ -1,7 +1,7 @@
 import type * as vscode from "vscode";
 import type { ResourcePackProjectService } from "../../resourceProject/resourcePackProjectService";
 import type { ResourceUniverseService } from "../../resourceUniverse/core/resourceUniverseService";
-import type { ResourceUniverseNavigationFacade } from "../../services/resourceUniverseNavigationFacade";
+import type { ResourceUniverseNavigation } from "../../services/resourceUniverseNavigation";
 import type { RsglSubsystemRegistration } from "../registerRsglSubsystem";
 import {
   rsglCommands,
@@ -39,7 +39,7 @@ export interface RsglSubsystemFactoryOptions {
   extensionContext: vscode.ExtensionContext;
   projects: ResourcePackProjectService;
   universe: ResourceUniverseService;
-  navigation: ResourceUniverseNavigationFacade;
+  navigation: ResourceUniverseNavigation;
 }
 
 /** Creates the RSGL integration behind the installed feature-bundle boundary. */
