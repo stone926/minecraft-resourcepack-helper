@@ -583,7 +583,7 @@ describe("RSGL LSP server core", () => {
     }
   });
 
-  it("resolves relative defaultAssetsPath and resourcePackRoots from the config directory", () => {
+  it("resolves canonical resource-pack paths from the config directory", () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "mc-resourcepack-helper-rsgl-config-paths-"));
     const projectRoot = path.join(root, "project 配置");
     const sourceFile = path.join(projectRoot, "src", "main.rsgl");
@@ -607,8 +607,8 @@ describe("RSGL LSP server core", () => {
       }
       fs.writeFileSync(path.join(customPack, "pack.mcmeta"), "{}");
       fs.writeFileSync(path.join(projectRoot, "rsgl.config.json"), JSON.stringify({
-        defaultAssetsPath: path.relative(projectRoot, defaultAssets),
-        resourcePackRoots: [path.relative(projectRoot, customPack)],
+        vanillaResourcePackPath: path.relative(projectRoot, defaultAssets),
+        customResourcePackPaths: [path.relative(projectRoot, customPack)],
         extern: [
           { source: "vanilla", kind: "texture", patterns: ["example:item/vanilla"] },
           { source: "custom", kind: "texture", patterns: ["example:item/custom"] }
@@ -623,7 +623,7 @@ describe("RSGL LSP server core", () => {
     }
   });
 
-  it("treats project defaultAssetsPath null as explicit disable and falls back only for undefined", () => {
+  it("treats project vanillaResourcePackPath null as explicit disable and falls back only for undefined", () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "mc-resourcepack-helper-rsgl-config-precedence-"));
     const settingsAssets = path.join(root, "settings-assets");
     const texture = path.join(settingsAssets, "assets", "example", "textures", "item", "fallback.png");
@@ -640,7 +640,7 @@ describe("RSGL LSP server core", () => {
         fs.writeFileSync(fileName, "");
       }
       fs.writeFileSync(path.join(root, "disabled", "rsgl.config.json"), JSON.stringify({
-        defaultAssetsPath: null
+        vanillaResourcePackPath: null
       }));
       fs.writeFileSync(path.join(root, "fallback", "rsgl.config.json"), "{}");
 
@@ -670,7 +670,7 @@ describe("RSGL LSP server core", () => {
         fs.writeFileSync(fileName, "");
       }
       fs.writeFileSync(path.join(secondProject, "rsgl.config.json"), JSON.stringify({
-        defaultAssetsPath: path.relative(secondProject, secondAssets)
+        vanillaResourcePackPath: path.relative(secondProject, secondAssets)
       }));
       const settings: RsglValidationSettings = {
         defaultAssetsPath: null,
@@ -823,9 +823,9 @@ describe("RSGL LSP server core", () => {
     ), "utf8");
 
     assert.ok(buildSource.includes("defaultAssetsPath: projectDefaultAssetsPath === undefined"));
-    assert.ok(buildSource.includes("? configuredDefaultAssetsPath(configurationScope)"));
+    assert.ok(buildSource.includes("? configuredVanillaResourcePackPath(configurationScope)"));
     assert.strictEqual(
-      buildSource.includes("projectConfig?.defaultAssetsPath ?? configuredDefaultAssetsPath(configurationScope)"),
+      buildSource.includes("projectConfig?.defaultAssetsPath ?? configuredVanillaResourcePackPath(configurationScope)"),
       false
     );
     assert.ok(buildSource.includes("const validationAnchor = isDirectoryBuildContext(context)"));

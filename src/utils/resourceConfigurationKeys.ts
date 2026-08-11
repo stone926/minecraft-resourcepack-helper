@@ -1,12 +1,16 @@
 export const resourceConfigurationKeys = {
-  defaultAssetsPath: "McResHelper.defaultMcAssetsPath",
-  resourcePackLoadOrder: "McResHelper.resourcePackLoadOrder",
+  vanillaResourcePackPath: "McResHelper.vanillaResourcePackPath",
+  customResourcePackPaths: "McResHelper.customResourcePackPaths",
+  legacyDefaultMcAssetsPath: "McResHelper.defaultMcAssetsPath",
+  legacyResourcePackLoadOrder: "McResHelper.resourcePackLoadOrder",
   undefinedTextureVariableColor: "McResHelper.tipColorForUndefinedTextureVariables"
 } as const;
 
 export const resourceResolutionConfigurationKeys = [
-  resourceConfigurationKeys.defaultAssetsPath,
-  resourceConfigurationKeys.resourcePackLoadOrder
+  resourceConfigurationKeys.vanillaResourcePackPath,
+  resourceConfigurationKeys.customResourcePackPaths,
+  resourceConfigurationKeys.legacyDefaultMcAssetsPath,
+  resourceConfigurationKeys.legacyResourcePackLoadOrder
 ] as const;
 
 export interface ConfigurationChangeEventLike {

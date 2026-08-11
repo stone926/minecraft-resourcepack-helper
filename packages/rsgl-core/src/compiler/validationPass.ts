@@ -9,8 +9,8 @@ export type RsglExternDeclarationSelection =
   | {
       readonly kind: "selected";
       readonly declaration: RsglExternDeclaration;
-      /** Best matching declaration from each remaining explicitly allowed source. */
-      readonly fallbackDeclarations: readonly RsglExternDeclaration[];
+      /** Best matching declaration from every explicitly allowed physical source. */
+      readonly declarations: readonly RsglExternDeclaration[];
     }
   | { readonly kind: "unsupported" }
   | { readonly kind: "undeclared" };

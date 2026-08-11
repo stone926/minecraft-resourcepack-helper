@@ -10,7 +10,7 @@ describe("model preview dependency presentation", () => {
       { uri: "file:///pack/texture.png", kind: "texture" },
       { uri: "file:///candidate/texture.png", kind: "texture", watchOnly: true },
       { uri: "file:///candidate/pack.mcmeta", kind: "packMetadata", watchOnly: true },
-      { uri: "configuration:McResHelper.resourcePackLoadOrder", kind: "configuration" }
+      { uri: "configuration:McResHelper.customResourcePackPaths", kind: "configuration" }
     ];
 
     const displayed = getDisplayedPreviewDependencies(dependencies);

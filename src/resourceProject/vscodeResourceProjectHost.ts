@@ -3,6 +3,7 @@ import {
   createStableResourceProjectRevision,
   type SerializedResourceUri
 } from "../../packages/resource-project/src";
+import { getResourceConfiguration } from "../utils/resourceConfiguration";
 import { sharedConfigurationFromSettings } from "./sharedConfiguration";
 import type {
   ResourcePackProjectServiceHost,
@@ -52,21 +53,21 @@ export class VscodeResourcePackProjectHost implements ResourcePackProjectService
   public getWorkspaceFolders(): readonly ResourceProjectWorkspaceFolder[] {
     return (vscode.workspace.workspaceFolders ?? []).map(folder => {
       const folderUri = folder.uri.toString();
-      const configuration = vscode.workspace.getConfiguration("McResHelper", folder.uri);
-      const defaultAssetsPath = configuration.get<string | null>("defaultMcAssetsPath");
-      const resourcePackLoadOrder = configuration.get<string[]>("resourcePackLoadOrder") ?? [];
+      const configuration = getResourceConfiguration(folder.uri);
+      const vanillaResourcePackPath = configuration.defaultAssetsPath;
+      const customResourcePackPaths = configuration.resourcePackRoots ?? [];
       const sharedConfiguration = sharedConfigurationFromSettings(
         folderUri,
-        defaultAssetsPath,
-        resourcePackLoadOrder
+        vanillaResourcePackPath,
+        customResourcePackPaths
       );
       return {
         uri: folderUri,
         sharedConfiguration,
         configurationRevision: createStableResourceProjectRevision("workspace-settings", {
           folderUri,
-          defaultAssetsPath,
-          resourcePackLoadOrder
+          vanillaResourcePackPath,
+          customResourcePackPaths
         })
       };
     });

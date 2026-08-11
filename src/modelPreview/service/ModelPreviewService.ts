@@ -361,12 +361,12 @@ function toPreviewDependencies(dependencies: ResolvedDependency[], includeConfig
   }
 
   if (includeConfiguration) {
-    previewDependencies.set("configuration\0defaultMcAssetsPath", {
-      uri: `configuration:${resourceConfigurationKeys.defaultAssetsPath}`,
+    previewDependencies.set("configuration\0vanillaResourcePackPath", {
+      uri: `configuration:${resourceConfigurationKeys.vanillaResourcePackPath}`,
       kind: "configuration"
     });
-    previewDependencies.set("configuration\0resourcePackLoadOrder", {
-      uri: `configuration:${resourceConfigurationKeys.resourcePackLoadOrder}`,
+    previewDependencies.set("configuration\0customResourcePackPaths", {
+      uri: `configuration:${resourceConfigurationKeys.customResourcePackPaths}`,
       kind: "configuration"
     });
   }

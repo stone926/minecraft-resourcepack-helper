@@ -10,12 +10,17 @@ import type {
 } from "../../../../packages/rsgl-core/src/compiler";
 import {
   loadRsglProjectConfigForSource,
+  projectCustomResourcePackPaths,
   projectCompileOptionsFromRsglConfig,
-  projectEmitOptionsFromRsglConfig
+  projectEmitOptionsFromRsglConfig,
+  projectVanillaResourcePackPath
 } from "../../../../packages/rsgl-core/src/rsglConfig";
 import { resolveRsglSourceRootFromFileName } from "../../../../packages/rsgl-core/src/sourceRoot";
 import { rsglCommands } from "../../../../packages/rsgl-shared/src";
-import { configuredDefaultAssetsPath, configuredResourcePackLoadOrder } from "../configuration";
+import {
+  configuredCustomResourcePackPaths,
+  configuredVanillaResourcePackPath
+} from "../configuration";
 import { applyRsglEmittedFiles } from "./asyncBuildWriter";
 import {
   RsglBuildWorkerExitError,
@@ -356,7 +361,12 @@ function createWorkerBuildPayload(
     ? context.sourceRoot
     : context.sourceFileName;
   const projectConfig = loadRsglProjectConfigForSource(validationAnchor)?.config;
-  const projectDefaultAssetsPath = projectConfig?.defaultAssetsPath;
+  const projectDefaultAssetsPath = projectConfig
+    ? projectVanillaResourcePackPath(projectConfig)
+    : undefined;
+  const projectResourcePackRoots = projectConfig
+    ? projectCustomResourcePackPaths(projectConfig)
+    : undefined;
   const configurationScope = vscode.Uri.file(validationAnchor);
   return {
     ...projectCompileOptionsFromRsglConfig(projectConfig ?? {}),
@@ -370,10 +380,10 @@ function createWorkerBuildPayload(
     outputRoot: context.outputRoot,
     outputPackRoot: context.outputRoot,
     defaultAssetsPath: projectDefaultAssetsPath === undefined
-      ? configuredDefaultAssetsPath(configurationScope)
+      ? configuredVanillaResourcePackPath(configurationScope)
       : projectDefaultAssetsPath,
-    resourcePackRoots: projectConfig?.resourcePackRoots
-      ?? configuredResourcePackLoadOrder(configurationScope),
+    resourcePackRoots: projectResourcePackRoots
+      ?? configuredCustomResourcePackPaths(configurationScope),
     globalExterns: projectConfig?.extern,
     checkExternExistence: projectConfig?.checkExternExistence
   };

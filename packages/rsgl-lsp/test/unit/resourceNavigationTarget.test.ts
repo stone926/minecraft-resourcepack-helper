@@ -69,13 +69,19 @@ describe("RSGL host resource navigation target selection", () => {
         kind === "model" && id === "demo:block/parent"
           ? { textures: { all: "demo:block/fallback" } }
           : undefined,
-      resourceResolution: (kind, id) => ({
-        resolvedPath: kind === "texture" && id === "demo:block/fallback"
-          ? path.resolve("vanilla-fallback.png")
-          : null,
-        candidatePaths: [],
-        source: "vanilla"
-      })
+      resourceResolution: (kind, id) => kind === "model" && id === "demo:block/parent"
+        ? {
+            resolvedPath: path.resolve("local-parent.json"),
+            candidatePaths: [],
+            source: "local"
+          }
+        : {
+            resolvedPath: kind === "texture" && id === "demo:block/fallback"
+              ? path.resolve("vanilla-fallback.png")
+              : null,
+            candidatePaths: [],
+            source: "vanilla"
+          }
     });
     const selections = resourceNavigationTargetsAtOffset(
       analysis,
@@ -85,7 +91,7 @@ describe("RSGL host resource navigation target selection", () => {
 
     assert.deepStrictEqual(selections, [{
       target: { kind: "model", id: "demo:block/parent" },
-      resolutionScope: "local",
+      resolutionScope: "effective",
       declarationMode: "checked"
     }]);
     assert.ok(analysis.resourceReferences.some(reference =>

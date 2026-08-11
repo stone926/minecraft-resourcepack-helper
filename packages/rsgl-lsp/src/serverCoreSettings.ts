@@ -6,7 +6,9 @@ import {
   isRsglPathInsideOrEqual,
   loadRsglProjectConfigForSource,
   normalizeRsglFormattingConfiguration,
+  projectCustomResourcePackPaths,
   projectCompileOptionsFromRsglConfig,
+  projectVanillaResourcePackPath,
   resolveRsglCompileConfiguration,
   resolveRsglOutputPackRoot,
   type RsglCompileConfigurationOptions,
@@ -209,7 +211,12 @@ function resolvedResourceAnalysisConfiguration(
 ): RsglResourceAnalysisConfiguration & { options: RsglWorkspaceAnalysisOptions } {
   const projectConfig = loadRsglProjectConfigForSource(sourceFileName)?.config;
   const sharedSettings = validationSettingsForSource(sourceFileName, settings);
-  const projectDefaultAssetsPath = projectConfig?.defaultAssetsPath;
+  const projectDefaultAssetsPath = projectConfig
+    ? projectVanillaResourcePackPath(projectConfig)
+    : undefined;
+  const projectResourcePackRoots = projectConfig
+    ? projectCustomResourcePackPaths(projectConfig)
+    : undefined;
   const outputPackRoot = projectContext
     ? fileNameFromSerializedResourceUri(projectContext.outputPackRootUri, nativePathMappings)
     : resolveRsglOutputPackRoot(sourceFileName, projectConfig?.outDir);
@@ -221,7 +228,7 @@ function resolvedResourceAnalysisConfiguration(
   const resourcePackRoots = projectContext
     ? projectContext.externalLayers.flatMap(layer =>
         directoryLayerFileName(layer, nativePathMappings) ?? [])
-    : projectConfig?.resourcePackRoots ?? sharedSettings.resourcePackRoots;
+    : projectResourcePackRoots ?? sharedSettings.resourcePackRoots;
   const unavailableResolutionScopes = projectContext
     ? [
         ...(!outputPackRoot ? ["local" as const] : []),

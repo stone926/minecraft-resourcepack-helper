@@ -4,8 +4,10 @@ import {
   DEFAULT_MAX_ITEM_MODEL_DEPTH,
   effectiveNamespace,
   parseRsglProjectConfig,
+  projectCustomResourcePackPaths,
   projectCompileOptionsFromRsglConfig,
   projectEmitOptionsFromRsglConfig,
+  projectVanillaResourcePackPath,
   resolveRsglCompileConfiguration,
   rsglTargetPackFormatForMinecraftVersion
 } from "../../src";
@@ -77,6 +79,44 @@ describe("RSGL project compile configuration", () => {
       sourceMaps: true,
       manifest: true
     });
+  });
+
+  it("normalizes legacy resource-pack paths to canonical project fields", () => {
+    const canonical = parseRsglProjectConfig({
+      vanillaResourcePackPath: "vanilla pack",
+      customResourcePackPaths: ["high pack", "low pack"]
+    });
+    assert.strictEqual(canonical.vanillaResourcePackPath, "vanilla pack");
+    assert.deepStrictEqual(canonical.customResourcePackPaths, ["high pack", "low pack"]);
+
+    const legacy = parseRsglProjectConfig({
+      defaultAssetsPath: "legacy vanilla",
+      resourcePackRoots: ["legacy custom"]
+    });
+    assert.strictEqual(legacy.vanillaResourcePackPath, "legacy vanilla");
+    assert.deepStrictEqual(legacy.customResourcePackPaths, ["legacy custom"]);
+    assert.strictEqual(Object.hasOwn(legacy, "defaultAssetsPath"), false);
+    assert.strictEqual(Object.hasOwn(legacy, "resourcePackRoots"), false);
+  });
+
+  it("gives canonical resource-pack fields priority over legacy fallbacks", () => {
+    const parsed = parseRsglProjectConfig({
+      vanillaResourcePackPath: "canonical",
+      customResourcePackPaths: ["canonical"],
+      defaultAssetsPath: 7,
+      resourcePackRoots: "invalid legacy value"
+    });
+    assert.strictEqual(parsed.vanillaResourcePackPath, "canonical");
+    assert.deepStrictEqual(parsed.customResourcePackPaths, ["canonical"]);
+
+    const programmaticConfig = {
+      vanillaResourcePackPath: "canonical",
+      customResourcePackPaths: ["canonical"],
+      defaultAssetsPath: "legacy",
+      resourcePackRoots: ["legacy"]
+    };
+    assert.strictEqual(projectVanillaResourcePackPath(programmaticConfig), "canonical");
+    assert.deepStrictEqual(projectCustomResourcePackPaths(programmaticConfig), ["canonical"]);
   });
 
   it("keeps public and internal project configuration keys separate", () => {
@@ -158,7 +198,10 @@ describe("RSGL project compile configuration", () => {
       [{ maxItemModelDepth: 0 }, /rsgl\.config\.json\.maxItemModelDepth/],
       [{ maxItemModelDepth: -1 }, /rsgl\.config\.json\.maxItemModelDepth/],
       [{ maxItemModelDepth: 1.5 }, /rsgl\.config\.json\.maxItemModelDepth/],
-      [{ maxItemModelDepth: Number.MAX_SAFE_INTEGER + 1 }, /rsgl\.config\.json\.maxItemModelDepth/]
+      [{ maxItemModelDepth: Number.MAX_SAFE_INTEGER + 1 }, /rsgl\.config\.json\.maxItemModelDepth/],
+      [{ vanillaResourcePackPath: 1 }, /rsgl\.config\.json\.vanillaResourcePackPath/],
+      [{ customResourcePackPaths: "pack" }, /rsgl\.config\.json\.customResourcePackPaths/],
+      [{ customResourcePackPaths: [1] }, /rsgl\.config\.json\.customResourcePackPaths\[0\]/]
     ];
 
     for (const [config, expectedMessage] of invalidConfigs) {

@@ -40,6 +40,7 @@ describe("model preview dependency tracking, caching, and cancellation", () => {
       assert.strictEqual(tracker.hasFileAtOrBelow(path.dirname(textureFileName)), true);
       assert.strictEqual(tracker.hasFileAtOrBelow(path.join(pack, "assets/minecraft/sounds")), false);
       assert.strictEqual(tracker.hasFile(path.join(pack, "assets/minecraft/textures/block/dirt.png")), false);
+      assert.strictEqual(tracker.hasConfiguration("McResHelper.vanillaResourcePackPath"), true);
       assert.strictEqual(tracker.hasConfiguration("McResHelper.defaultMcAssetsPath"), true);
     } finally {
       removeTempDirectory(root);

@@ -30,8 +30,8 @@ Minecraft Resourcepack Helper is a VS Code extension for Minecraft Java resource
 
 1. Install the extension from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=stone926.minecraft-resourcepack-helper).
 2. Open a folder that contains a Minecraft resource pack `pack.mcmeta`.
-3. Configure `McResHelper.defaultMcAssetsPath` if you want navigation, completion, diagnostics, the resource graph, and model preview to fall back to vanilla assets.
-4. Optional: configure `McResHelper.resourcePackLoadOrder` with absolute paths to lower-priority resource pack roots.
+3. Configure `McResHelper.vanillaResourcePackPath` if you want navigation, completion, diagnostics, the resource graph, and model preview to fall back to vanilla assets.
+4. Optional: configure `McResHelper.customResourcePackPaths` with absolute paths to lower-priority resource pack roots.
 5. Open a supported resource pack file and use Go to Definition, path suggestions, diagnostics, the Minecraft Resources activity bar view, or model preview for model JSON files.
 
 The extension activates for a resource pack or an `.rsgl` document. RSGL runtime code, its language-server process, source watchers, and build worker remain unloaded in a JSON-only workflow until an RSGL signal actually needs them.
@@ -42,8 +42,10 @@ Navigation, completion, diagnostics, the resource graph, and model preview use t
 
 1. The local pack currently being edited. For an RSGL project, this is the canonical output pack root selected by `rsgl.config.json.outDir` or pack discovery.
 2. Active overlays and filters declared in `pack.mcmeta`.
-3. Custom lower-priority packs from `rsgl.config.json.resourcePackRoots` or `McResHelper.resourcePackLoadOrder`, ordered from higher priority to lower priority.
-4. Vanilla assets from `rsgl.config.json.defaultAssetsPath` or `McResHelper.defaultMcAssetsPath`.
+3. Custom lower-priority packs from `rsgl.config.json.customResourcePackPaths` or `McResHelper.customResourcePackPaths`, ordered from higher priority to lower priority.
+4. Vanilla assets from `rsgl.config.json.vanillaResourcePackPath` or `McResHelper.vanillaResourcePackPath`.
+
+Existing configurations may still use the deprecated `resourcePackRoots`, `defaultAssetsPath`, `McResHelper.resourcePackLoadOrder`, and `McResHelper.defaultMcAssetsPath` aliases, but new configuration should use the canonical names above.
 
 Physical files and live RSGL producers are resolved through the same project context. For an external/default resource ID, a JSON, shader, CIT, or RSGL reference therefore selects the same effective local/custom/vanilla layer; archive-backed custom packs and vanilla jars remain read-only.
 
@@ -146,8 +148,8 @@ workspace/
 
 ## Configuration
 
-- `McResHelper.defaultMcAssetsPath`: absolute path to vanilla Minecraft assets. It can point at an `assets` folder, an `assets/minecraft` folder, a resource pack root containing `assets/minecraft`, or a vanilla `client.jar`.
-- `McResHelper.resourcePackLoadOrder`: absolute paths to enabled resource pack directories or ZIPs below the currently edited pack, ordered from higher priority to lower priority. The current pack is checked first, then this list, then vanilla assets.
+- `McResHelper.vanillaResourcePackPath`: absolute path to vanilla Minecraft assets. It can point at an `assets` folder, an `assets/minecraft` folder, a resource pack root containing `assets/minecraft`, or a vanilla `client.jar`.
+- `McResHelper.customResourcePackPaths`: absolute paths to enabled resource pack directories or ZIPs below the currently edited pack, ordered from higher priority to lower priority. The current pack is checked first, then this list, then vanilla assets.
 - `McResHelper.tipColorForUndefinedTextureVariables`: color used to highlight undefined `#texture` variables in model files.
 - `McResHelper.rsgl.enabled`: `auto` loads RSGL only for relevant signals, `on` preloads its host after a project is discovered, and `off` keeps its runtime, processes, providers, and source watchers disabled. Static syntax highlighting remains available.
 
@@ -155,8 +157,8 @@ Example:
 
 ```json
 {
-  "McResHelper.defaultMcAssetsPath": "C:/.minecraft/my_test/26.2/assets/minecraft",
-  "McResHelper.resourcePackLoadOrder": [
+  "McResHelper.vanillaResourcePackPath": "C:/.minecraft/my_test/26.2/assets/minecraft",
+  "McResHelper.customResourcePackPaths": [
     "C:/.minecraft/resourcepacks/base_pack"
   ],
   "McResHelper.rsgl.enabled": "auto",

@@ -25,16 +25,34 @@
       "type": "boolean",
       "description": "构建时是否生成 RSGL 清单。"
     },
+    "vanillaResourcePackPath": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "所有自定义资源包之后加载的原版资源包路径，相对于此配置文件解析；设为 null 可禁用原版资源查找。"
+    },
+    "customResourcePackPaths": {
+      "type": "array",
+      "description": "自定义资源包路径，按优先级从高到低排列，相对于此配置文件解析。",
+      "items": {
+        "type": "string"
+      }
+    },
     "defaultAssetsPath": {
       "type": [
         "string",
         "null"
       ],
-      "description": "校验原版资源时使用的默认 Minecraft assets 根目录；设为 null 可禁用。"
+      "deprecated": true,
+      "deprecationMessage": "请改用 vanillaResourcePackPath。",
+      "description": "vanillaResourcePackPath 的已弃用 fallback 别名；canonical 字段存在时忽略此字段。"
     },
     "resourcePackRoots": {
       "type": "array",
-      "description": "按自定义资源包加载顺序排列的资源包根目录，相对于此配置文件解析。",
+      "deprecated": true,
+      "deprecationMessage": "请改用 customResourcePackPaths。",
+      "description": "customResourcePackPaths 的已弃用 fallback 别名；canonical 字段存在时忽略此字段。",
       "items": {
         "type": "string"
       }

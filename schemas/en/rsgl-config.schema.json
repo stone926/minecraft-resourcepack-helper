@@ -25,16 +25,34 @@
       "type": "boolean",
       "description": "Whether builds emit the RSGL manifest."
     },
+    "vanillaResourcePackPath": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Vanilla resource-pack path used after all custom packs, resolved relative to this configuration file; set to null to disable vanilla lookup."
+    },
+    "customResourcePackPaths": {
+      "type": "array",
+      "description": "Custom resource-pack paths from highest to lowest priority, resolved relative to this configuration file.",
+      "items": {
+        "type": "string"
+      }
+    },
     "defaultAssetsPath": {
       "type": [
         "string",
         "null"
       ],
-      "description": "Default Minecraft assets root used for vanilla resource validation, or null to disable it."
+      "deprecated": true,
+      "deprecationMessage": "Use vanillaResourcePackPath instead.",
+      "description": "Deprecated fallback alias for vanillaResourcePackPath; ignored when the canonical field is present."
     },
     "resourcePackRoots": {
       "type": "array",
-      "description": "Resource-pack roots in custom-pack load order, resolved relative to this configuration file.",
+      "deprecated": true,
+      "deprecationMessage": "Use customResourcePackPaths instead.",
+      "description": "Deprecated fallback alias for customResourcePackPaths; ignored when the canonical field is present.",
       "items": {
         "type": "string"
       }

@@ -436,14 +436,29 @@
     "configuration": {
       "title": "%config.title%",
       "properties": {
+        "McResHelper.vanillaResourcePackPath": {
+          "type": "string",
+          "description": "%config.desc.vanillaResourcePackPath%",
+          "default": ""
+        },
+        "McResHelper.customResourcePackPaths": {
+          "type": "array",
+          "description": "%config.desc.customResourcePackPaths%",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
         "McResHelper.defaultMcAssetsPath": {
           "type": "string",
           "description": "%config.desc.defaultMcAssetsPath%",
+          "deprecationMessage": "%config.deprecation.defaultMcAssetsPath%",
           "default": ""
         },
         "McResHelper.resourcePackLoadOrder": {
           "type": "array",
           "description": "%config.desc.resourcePackLoadOrder%",
+          "deprecationMessage": "%config.deprecation.resourcePackLoadOrder%",
           "default": [],
           "items": {
             "type": "string"

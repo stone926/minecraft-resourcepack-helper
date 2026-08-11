@@ -98,13 +98,19 @@ describe("RSGL contentless resource snapshot", () => {
         source === "local" && kind === "model" && id === "demo:block/parent"
           ? { textures: { all: "demo:block/fallback" } }
           : undefined,
-      resourceResolution: (kind, id) => ({
-        resolvedPath: kind === "texture" && id === "demo:block/fallback"
-          ? vanillaTexture
-          : null,
-        candidatePaths: [vanillaTexture],
-        source: "vanilla"
-      })
+      resourceResolution: (kind, id) => kind === "model" && id === "demo:block/parent"
+        ? {
+            resolvedPath: localParent,
+            candidatePaths: [localParent],
+            source: "local"
+          }
+        : {
+            resolvedPath: kind === "texture" && id === "demo:block/fallback"
+              ? vanillaTexture
+              : null,
+            candidatePaths: [vanillaTexture],
+            source: "vanilla"
+          }
     });
     const snapshot = createRsglResourceSnapshot(analysis, {
       projectId: "project-inherited-effective"

@@ -129,8 +129,22 @@ describe("integrated RSGL extension surface", () => {
     assert.ok(client.includes("rsglDependencyStructureChangedNotification"));
     assert.strictEqual(client.includes('createFileSystemWatcher("**/*.json")'), false);
 
-    assert.strictEqual(rsglConfigKeys.defaultAssetsPath, resourceConfigurationKeys.defaultAssetsPath);
-    assert.strictEqual(rsglConfigKeys.resourcePackLoadOrder, resourceConfigurationKeys.resourcePackLoadOrder);
+    assert.strictEqual(
+      rsglConfigKeys.vanillaResourcePackPath,
+      resourceConfigurationKeys.vanillaResourcePackPath
+    );
+    assert.strictEqual(
+      rsglConfigKeys.customResourcePackPaths,
+      resourceConfigurationKeys.customResourcePackPaths
+    );
+    assert.strictEqual(
+      rsglConfigKeys.legacyDefaultMcAssetsPath,
+      resourceConfigurationKeys.legacyDefaultMcAssetsPath
+    );
+    assert.strictEqual(
+      rsglConfigKeys.legacyResourcePackLoadOrder,
+      resourceConfigurationKeys.legacyResourcePackLoadOrder
+    );
     assert.strictEqual(shared.includes('"rsgl.outDir"'), false);
     assert.ok(buildContexts.includes("loadRsglProjectConfigForSource"));
     assert.ok(buildContexts.includes("resolveRsglOutputPackRoot"));
@@ -244,6 +258,18 @@ describe("integrated RSGL extension surface", () => {
     }
     const grammar = readSource("syntaxes", "rsgl.tmLanguage.json");
     assert.ok(grammar.includes("\\\\b(local|custom|vanilla)\\\\b"));
+  });
+
+  it("publishes canonical resource-pack path fields and deprecated aliases", () => {
+    for (const locale of ["en", "zh-cn"]) {
+      const schema = readJson<{
+        properties: Record<string, { deprecated?: boolean }>;
+      }>("schemas", locale, "rsgl-config.schema.json");
+      assert.ok(schema.properties.vanillaResourcePackPath);
+      assert.ok(schema.properties.customResourcePackPaths);
+      assert.strictEqual(schema.properties.defaultAssetsPath?.deprecated, true);
+      assert.strictEqual(schema.properties.resourcePackRoots?.deprecated, true);
+    }
   });
 });
 

@@ -2,7 +2,7 @@ import * as path from "node:path";
 import * as vscode from "vscode";
 import { modelPreviewWebviewMessages } from "../../i18n/messages";
 import { localize } from "../../i18n/runtime";
-import { resourceConfigurationKeys } from "../../utils/resourceConfigurationKeys";
+import { getResourceConfiguration } from "../../utils/resourceConfiguration";
 import { findPackRoot } from "../../../packages/mc-assets/src";
 import type { ModelPreviewDocument, PreviewMaterial, WebviewModelPreviewDocument } from "../ir/PreviewDocument";
 import { getDisplayedPreviewDependencies } from "./ModelPreviewDependencyPresentation";
@@ -153,13 +153,13 @@ export function getModelPreviewLocalResourceRoots(extensionUri: vscode.Uri, mode
     roots.push(folder.uri);
   }
 
-  const configuration = vscode.workspace.getConfiguration();
-  const defaultAssetsPath = configuration.get<string | null>(resourceConfigurationKeys.defaultAssetsPath);
+  const configuration = getResourceConfiguration();
+  const defaultAssetsPath = configuration.defaultAssetsPath;
   if (defaultAssetsPath) {
     roots.push(vscode.Uri.file(defaultAssetsPath));
   }
 
-  for (const root of configuration.get<string[]>(resourceConfigurationKeys.resourcePackLoadOrder) ?? []) {
+  for (const root of configuration.resourcePackRoots ?? []) {
     if (root.trim()) {
       roots.push(vscode.Uri.file(root));
     }

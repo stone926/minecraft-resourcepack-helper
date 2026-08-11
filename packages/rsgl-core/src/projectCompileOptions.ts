@@ -1,6 +1,8 @@
 import type { RsglResourceValidationOptions } from "./compiler";
 import {
+  projectCustomResourcePackPaths,
   projectCompileOptionsFromRsglConfig,
+  projectVanillaResourcePackPath,
   type RsglProjectCompileOptions,
   type RsglProjectConfig
 } from "./rsglConfig";
@@ -12,8 +14,9 @@ import {
 
 /**
  * Host-specific workspace facts layered over the project-config defaults.
- * `defaultAssetsPath` and `resourcePackRoots` fall back to the validated
- * config when a host does not resolve its own values.
+ * Internal `defaultAssetsPath` and `resourcePackRoots` values fall back to
+ * the canonical project-config resource-pack paths when a host does not
+ * resolve its own values.
  */
 export type RsglProjectWorkspaceOverrides = Pick<RsglWorkspaceValidationOptions, "sourceFileName">
   & Partial<Pick<
@@ -41,8 +44,8 @@ export function compileOptionsFromProjectConfig(
     globalExterns: config.extern,
     checkExternExistence: config.checkExternExistence,
     ...createRsglWorkspaceValidationOptions({
-      defaultAssetsPath: config.defaultAssetsPath,
-      resourcePackRoots: config.resourcePackRoots,
+      defaultAssetsPath: projectVanillaResourcePackPath(config),
+      resourcePackRoots: projectCustomResourcePackPaths(config),
       ...overrides
     })
   };

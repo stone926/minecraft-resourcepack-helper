@@ -22,6 +22,7 @@ import {
   rsglConfigKeys,
   rsglFileGlob,
   rsglRefreshWorkspaceNotification,
+  rsglResourceResolutionConfigKeys,
   rsglResourceNavigationProtocolVersion,
   rsglResourceNavigationRequest,
   rsglResourceSnapshotInvalidatedNotification,
@@ -36,8 +37,8 @@ import {
 import type { RsglFormattingConfiguration } from "../../../packages/rsgl-core/src";
 import { rsglWorkspaceSourceRootCache } from "../../../packages/rsgl-core/src/sourceRoot";
 import {
-  configuredDefaultAssetsPath,
-  configuredResourcePackLoadOrder,
+  configuredCustomResourcePackPaths,
+  configuredVanillaResourcePackPath,
   configuredRsglFormatting
 } from "./configuration";
 import {
@@ -311,8 +312,9 @@ export async function startRsglLanguageServer(
     }
   );
   hostDisposables.push(vscode.workspace.onDidChangeConfiguration(event => {
-    const semanticResolutionChanged = event.affectsConfiguration(rsglConfigKeys.defaultAssetsPath)
-      || event.affectsConfiguration(rsglConfigKeys.resourcePackLoadOrder);
+    const semanticResolutionChanged = rsglResourceResolutionConfigKeys.some(
+      section => event.affectsConfiguration(section)
+    );
     if (
       semanticResolutionChanged
       || event.affectsConfiguration(rsglConfigKeys.style)
@@ -496,14 +498,14 @@ export function dependencyPatternsFromNotification(value: unknown): RsglDependen
 function currentRsglValidationSettings(stdlibRoot: string): RsglValidationSettings {
   return {
     stdlibRoot,
-    defaultAssetsPath: configuredDefaultAssetsPath(),
-    resourcePackRoots: configuredResourcePackLoadOrder(),
+    defaultAssetsPath: configuredVanillaResourcePackPath(),
+    resourcePackRoots: configuredCustomResourcePackPaths(),
     formatting: configuredRsglFormatting(),
     workspaceFolders: (vscode.workspace.workspaceFolders ?? []).map(folder => ({
       workspaceFolderUri: folder.uri.toString(),
       workspaceFolderPath: folder.uri.fsPath,
-      defaultAssetsPath: configuredDefaultAssetsPath(folder.uri),
-      resourcePackRoots: configuredResourcePackLoadOrder(folder.uri),
+      defaultAssetsPath: configuredVanillaResourcePackPath(folder.uri),
+      resourcePackRoots: configuredCustomResourcePackPaths(folder.uri),
       formatting: configuredRsglFormatting(folder.uri)
     }))
   };

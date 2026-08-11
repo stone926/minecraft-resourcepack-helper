@@ -2,7 +2,8 @@ import type { TextRange } from "./parser";
 import type { ExternResourceKind } from "./resourceKinds";
 
 /**
- * Physical resource layer selected by an extern declaration.
+ * Physical resource layer named by an extern declaration or selected as the
+ * winner of Minecraft's effective resource-pack stack.
  *
  * `local` is the target/output pack, `custom` is an explicitly configured
  * resource-pack layer, and `vanilla` is the Minecraft Default layer.

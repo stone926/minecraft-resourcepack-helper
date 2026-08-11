@@ -1,10 +1,8 @@
 import * as vscode from "vscode";
-import { resourceConfigurationKeys } from "../utils/resourceConfigurationKeys";
+import { getConfiguredVanillaResourcePackPath } from "../utils/resourceConfiguration";
 
 export default function openDefaultMcAssetsPath() {
-  const defaultPath = vscode.workspace.getConfiguration().get<string | null>(
-    resourceConfigurationKeys.defaultAssetsPath
-  );
+  const defaultPath = getConfiguredVanillaResourcePackPath();
   if (!defaultPath) {
     return;
   }

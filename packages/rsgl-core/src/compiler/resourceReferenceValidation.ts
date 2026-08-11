@@ -148,10 +148,31 @@ export function checkResourceExists(
     kind,
     lookupId
   );
+  if (resolved.undeclaredWinnerSource) {
+    pushDiagnosticAtRange(
+      diagnostics,
+      "rsgl.undeclaredExternalResource",
+      `${resourceLabel(kind)} '${lookupId}' resolves from '${resolved.undeclaredWinnerSource}' in the effective resource-pack stack, but no matching extern ${resolved.undeclaredWinnerSource} declaration is in scope.`,
+      "error",
+      range,
+      sourceFile
+    );
+    return {
+      available: false,
+      external: true,
+      canonicalId: id,
+      lookupId,
+      source: resolved.undeclaredWinnerSource,
+      ...(resolved.resolvedPath ? { resolvedPath: resolved.resolvedPath } : {}),
+      ...(resolved.candidatePaths.length ? { candidatePaths: resolved.candidatePaths } : {}),
+      ...(resolved.metadataPaths.length ? { metadataPaths: resolved.metadataPaths } : {})
+    };
+  }
+
   const { declaration, skipExistenceCheck, resolvedPath, exists } = resolved;
   options.onExternResourceUsed?.({
     source: declaration.source,
-    resolutionScope: declaration.source,
+    resolutionScope: resolved.resolutionScope,
     resourceKind: declaration.resourceKind,
     targetKind: kind,
     id: lookupId,
@@ -384,11 +405,11 @@ function selectExternDeclaration(
     return [equallySpecific.find(candidate => candidate.skipExistenceCheck) ?? mostSpecific];
   });
   preferredBySource.sort(compareExternDeclarationPreference);
-  const [declaration, ...fallbackDeclarations] = preferredBySource;
+  const [declaration, ...remainingDeclarations] = preferredBySource;
   return {
     kind: "selected",
     declaration,
-    fallbackDeclarations
+    declarations: [declaration, ...remainingDeclarations]
   };
 }
 
@@ -399,12 +420,14 @@ interface ResolvedDeclaredExternalResource {
   exists: boolean;
   candidatePaths: string[];
   metadataPaths: string[];
+  resolutionScope: "effective" | ExternResourceSource;
+  undeclaredWinnerSource?: ExternResourceSource;
 }
 
 /**
- * Resolves the preferred extern declaration, then falls back only across other
- * explicitly declared physical sources. A broader declaration from the same
- * source cannot weaken a more-specific checked declaration.
+ * Extern declarations authorize physical layers; Minecraft's effective pack
+ * stack chooses the concrete winner. Source-scoped resolution remains only as
+ * a compatibility path for hosts that do not expose an effective resolver.
  */
 function resolveDeclaredExternalResource(
   selection: Extract<RsglExternDeclarationSelection, { kind: "selected" }>,
@@ -412,6 +435,70 @@ function resolveDeclaredExternalResource(
   kind: RsglResourceExistenceKind,
   id: string
 ): ResolvedDeclaredExternalResource {
+  const declarations = [...selection.declarations].sort((left, right) =>
+    externSourcePreference.indexOf(left.source) - externSourcePreference.indexOf(right.source)
+  );
+  const checkedDeclarations = declarations.filter(declaration =>
+    !externDeclarationSkipsExistenceCheck(declaration, options)
+  );
+  if (options.resourceResolution && checkedDeclarations.length > 0) {
+    const resolution = options.resourceResolution(kind, id);
+    if (resolution.resolvedPath !== null) {
+      const winningSource = resolution.source;
+      const resolvedDeclaration = winningSource
+        ? declarations.find(declaration => declaration.source === winningSource)
+        : selection.declaration;
+      if (!resolvedDeclaration) {
+        return {
+          declaration: selection.declaration,
+          skipExistenceCheck: false,
+          resolvedPath: resolution.resolvedPath,
+          exists: false,
+          candidatePaths: uniqueValues(resolution.candidatePaths),
+          metadataPaths: uniqueValues(resolution.metadataPaths ?? []),
+          resolutionScope: "effective",
+          undeclaredWinnerSource: winningSource
+        };
+      }
+      return {
+        declaration: resolvedDeclaration,
+        skipExistenceCheck: externDeclarationSkipsExistenceCheck(resolvedDeclaration, options),
+        resolvedPath: resolution.resolvedPath,
+        exists: true,
+        candidatePaths: uniqueValues(resolution.candidatePaths),
+        metadataPaths: uniqueValues(resolution.metadataPaths ?? []),
+        resolutionScope: "effective"
+      };
+    }
+
+    const uncheckedDeclaration = declarations.find(declaration =>
+      externDeclarationSkipsExistenceCheck(declaration, options)
+    );
+    const declaration = uncheckedDeclaration ?? declarations[0];
+    return {
+      declaration,
+      skipExistenceCheck: uncheckedDeclaration !== undefined,
+      resolvedPath: null,
+      exists: uncheckedDeclaration !== undefined,
+      candidatePaths: uniqueValues(resolution.candidatePaths),
+      metadataPaths: uniqueValues(resolution.metadataPaths ?? []),
+      resolutionScope: uncheckedDeclaration ? uncheckedDeclaration.source : "effective"
+    };
+  }
+
+  if (checkedDeclarations.length === 0) {
+    const declaration = declarations[0];
+    return {
+      declaration,
+      skipExistenceCheck: true,
+      resolvedPath: null,
+      exists: true,
+      candidatePaths: [],
+      metadataPaths: [],
+      resolutionScope: declaration.source
+    };
+  }
+
   const attempts: Array<{
     declaration: RsglExternDeclaration;
     skipExistenceCheck: boolean;
@@ -419,15 +506,14 @@ function resolveDeclaredExternalResource(
     exists: boolean;
   }> = [];
   const primarySourcePriority = externSourcePreference.indexOf(selection.declaration.source);
-  const fallbackDeclarations = selection.fallbackDeclarations.filter(declaration =>
-    externSourcePreference.indexOf(declaration.source) < primarySourcePriority
+  const fallbackDeclarations = selection.declarations.filter(declaration =>
+    declaration !== selection.declaration
+    && externSourcePreference.indexOf(declaration.source) < primarySourcePriority
   ).sort((left, right) =>
     externSourcePreference.indexOf(left.source) - externSourcePreference.indexOf(right.source)
   );
   for (const [index, declaration] of [selection.declaration, ...fallbackDeclarations].entries()) {
-    const skipExistenceCheck = declaration.skipExistenceCheck
-      || declaration.checkExistence === false
-      || (declaration.checkExistence === undefined && options.checkExternExistence === false);
+    const skipExistenceCheck = externDeclarationSkipsExistenceCheck(declaration, options);
     // A checked declaration may discover a concrete higher pack-layer override.
     // It must not fall through to an unchecked declaration and silently weaken
     // the existence guarantee selected by the more-specific pattern.
@@ -457,8 +543,18 @@ function resolveDeclaredExternalResource(
     resolvedPath: chosen.skipExistenceCheck ? null : chosen.resolution?.resolvedPath ?? null,
     exists: chosen.exists,
     candidatePaths: uniqueValues(attempts.flatMap(attempt => attempt.resolution?.candidatePaths ?? [])),
-    metadataPaths: uniqueValues(attempts.flatMap(attempt => attempt.resolution?.metadataPaths ?? []))
+    metadataPaths: uniqueValues(attempts.flatMap(attempt => attempt.resolution?.metadataPaths ?? [])),
+    resolutionScope: chosen.declaration.source
   };
+}
+
+function externDeclarationSkipsExistenceCheck(
+  declaration: RsglExternDeclaration,
+  options: RsglResourceValidationOptions
+): boolean {
+  return declaration.skipExistenceCheck
+    || declaration.checkExistence === false
+    || (declaration.checkExistence === undefined && options.checkExternExistence === false);
 }
 
 function compareExternDeclarationPreference(

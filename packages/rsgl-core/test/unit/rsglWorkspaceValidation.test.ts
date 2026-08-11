@@ -327,6 +327,9 @@ describe("RSGL workspace validation", () => {
       const modelWarnings = result.diagnostics.filter(diagnostic =>
         diagnostic.code === "rsgl.modelNotFound"
       );
+      const undeclaredErrors = result.diagnostics.filter(diagnostic =>
+        diagnostic.code === "rsgl.undeclaredExternalResource"
+      );
 
       assert.deepStrictEqual(
         textureWarnings.map(diagnostic => diagnostic.message).sort(),
@@ -337,7 +340,13 @@ describe("RSGL workspace validation", () => {
       );
       assert.deepStrictEqual(
         modelWarnings.map(diagnostic => diagnostic.message),
-        ["Model not found: minecraft:block/vanilla_parent"]
+        []
+      );
+      assert.deepStrictEqual(
+        undeclaredErrors.map(diagnostic => diagnostic.message),
+        [
+          "Model 'minecraft:block/vanilla_parent' resolves from 'vanilla' in the effective resource-pack stack, but no matching extern vanilla declaration is in scope."
+        ]
       );
       assert.strictEqual(
         result.diagnostics.some(diagnostic =>
@@ -377,9 +386,7 @@ describe("RSGL workspace validation", () => {
       assert.strictEqual(filteredUsage?.resolutionScope, "effective");
       assert.strictEqual(filteredUsage?.resolvedPath, undefined);
       assert.strictEqual(filteredUsage?.candidatePaths?.includes(filteredVanillaTexture), false);
-      assert.strictEqual(strictLocalUsage?.source, "local");
-      assert.strictEqual(strictLocalUsage?.resolutionScope, "local");
-      assert.strictEqual(strictLocalUsage?.resolvedPath, undefined);
+      assert.strictEqual(strictLocalUsage, undefined);
       assert.strictEqual(
         usages.some(usage => usage.id === "minecraft:block/low_parent"),
         false
@@ -396,6 +403,114 @@ describe("RSGL workspace validation", () => {
       assert.strictEqual(
         effectiveResolutionCalls.get("model:minecraft:block/custom_parent"),
         1
+      );
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("resolves checked direct externs through the effective Minecraft pack stack", () => {
+    const root = createTempDir("rsgl-direct-extern-pack-stack-");
+    const sourcePack = path.join(root, "source-pack");
+    const outputPack = path.join(root, "output-pack");
+    const highCustomPack = path.join(root, "custom-high");
+    const lowCustomPack = path.join(root, "custom-low");
+    const defaultAssets = path.join(root, "default-assets");
+    const sourceFile = path.join(sourcePack, "rsgl", "main.rsgl");
+    const localShared = minecraftAssetPath(outputPack, "textures/block/shared.png");
+    const highShared = minecraftAssetPath(highCustomPack, "textures/block/shared.png");
+    const lowShared = minecraftAssetPath(lowCustomPack, "textures/block/shared.png");
+    const vanillaShared = minecraftAssetPath(defaultAssets, "textures/block/shared.png");
+    const highCustomShared = minecraftAssetPath(highCustomPack, "textures/block/custom_shared.png");
+    const lowCustomShared = minecraftAssetPath(lowCustomPack, "textures/block/custom_shared.png");
+    const vanillaCustomShared = minecraftAssetPath(defaultAssets, "textures/block/custom_shared.png");
+    const lowOnly = minecraftAssetPath(lowCustomPack, "textures/block/low_only.png");
+    const vanillaLowOnly = minecraftAssetPath(defaultAssets, "textures/block/low_only.png");
+    const vanillaOnly = minecraftAssetPath(defaultAssets, "textures/block/vanilla_only.png");
+    const usages: Array<{
+      id: string;
+      source: string;
+      resolutionScope?: string;
+      resolvedPath?: string;
+    }> = [];
+
+    try {
+      for (const packRoot of [sourcePack, outputPack, highCustomPack, lowCustomPack, defaultAssets]) {
+        fs.mkdirSync(packRoot, { recursive: true });
+        fs.writeFileSync(path.join(packRoot, "pack.mcmeta"), "{}");
+      }
+      fs.mkdirSync(path.dirname(sourceFile), { recursive: true });
+      fs.writeFileSync(sourceFile, [
+        "extern local texture minecraft:block/**",
+        "extern custom texture minecraft:block/*",
+        "extern vanilla texture minecraft:block/shared, minecraft:block/custom_shared, minecraft:block/low_only, minecraft:block/vanilla_only",
+        "model block effective_direct_externs {",
+        "  textures {",
+        "    shared: minecraft:block/shared",
+        "    custom_shared: minecraft:block/custom_shared",
+        "    low_only: minecraft:block/low_only",
+        "    vanilla_only: minecraft:block/vanilla_only",
+        "  }",
+        "}"
+      ].join("\n"));
+
+      for (const texture of [
+        localShared,
+        highShared,
+        lowShared,
+        vanillaShared,
+        highCustomShared,
+        lowCustomShared,
+        vanillaCustomShared,
+        lowOnly,
+        vanillaLowOnly,
+        vanillaOnly
+      ]) {
+        fs.mkdirSync(path.dirname(texture), { recursive: true });
+        fs.writeFileSync(texture, createPngBytes(16, 16));
+      }
+
+      const workspaceValidation = createRsglWorkspaceValidationOptions({
+        sourceFileName: sourceFile,
+        outputPackRoot: outputPack,
+        defaultAssetsPath: defaultAssets,
+        resourcePackRoots: [highCustomPack, lowCustomPack]
+      });
+      const result = compileRsglFile(sourceFile, {
+        ...workspaceValidation,
+        onExternResourceUsed: usage => usages.push(usage)
+      });
+
+      assert.deepStrictEqual(result.diagnostics, []);
+      assert.strictEqual(usages.length, 4);
+      assert.deepStrictEqual(
+        Object.fromEntries(usages.map(usage => [usage.id, {
+          source: usage.source,
+          resolutionScope: usage.resolutionScope,
+          resolvedPath: usage.resolvedPath
+        }])),
+        {
+          "minecraft:block/shared": {
+            source: "local",
+            resolutionScope: "effective",
+            resolvedPath: localShared
+          },
+          "minecraft:block/custom_shared": {
+            source: "custom",
+            resolutionScope: "effective",
+            resolvedPath: highCustomShared
+          },
+          "minecraft:block/low_only": {
+            source: "custom",
+            resolutionScope: "effective",
+            resolvedPath: lowOnly
+          },
+          "minecraft:block/vanilla_only": {
+            source: "vanilla",
+            resolutionScope: "effective",
+            resolvedPath: vanillaOnly
+          }
+        }
       );
     } finally {
       fs.rmSync(root, { recursive: true, force: true });

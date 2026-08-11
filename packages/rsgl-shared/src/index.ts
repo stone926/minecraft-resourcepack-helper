@@ -56,11 +56,20 @@ export const rsglCommands = {
 } as const;
 
 export const rsglConfigKeys = {
-  defaultAssetsPath: "McResHelper.defaultMcAssetsPath",
-  resourcePackLoadOrder: "McResHelper.resourcePackLoadOrder",
+  vanillaResourcePackPath: "McResHelper.vanillaResourcePackPath",
+  customResourcePackPaths: "McResHelper.customResourcePackPaths",
+  legacyDefaultMcAssetsPath: "McResHelper.defaultMcAssetsPath",
+  legacyResourcePackLoadOrder: "McResHelper.resourcePackLoadOrder",
   style: "McResHelper.rsgl.format.style",
   lineWidth: "McResHelper.rsgl.format.lineWidth",
   braceStyle: "McResHelper.rsgl.format.braceStyle"
 } as const;
+
+export const rsglResourceResolutionConfigKeys = [
+  rsglConfigKeys.vanillaResourcePackPath,
+  rsglConfigKeys.customResourcePackPaths,
+  rsglConfigKeys.legacyDefaultMcAssetsPath,
+  rsglConfigKeys.legacyResourcePackLoadOrder
+] as const;
 
 export type RsglCommandId = typeof rsglCommands[keyof typeof rsglCommands];

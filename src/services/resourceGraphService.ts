@@ -242,7 +242,7 @@ export class ResourceGraphService implements ResourceGraphTreeModelHost {
   public configureVanillaSource(): Thenable<unknown> {
     return vscode.commands.executeCommand(
       "workbench.action.openSettings",
-      resourceConfigurationKeys.defaultAssetsPath
+      resourceConfigurationKeys.vanillaResourcePackPath
     );
   }
 

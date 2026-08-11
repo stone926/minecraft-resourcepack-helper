@@ -52,7 +52,7 @@ export interface RsglResourceNavigationSourceLocation {
 
 export interface RsglExternalResourceUsage {
   source: ExternResourceSource;
-  /** Scope used for lookup; inherited external references resolve effectively. */
+  /** Checked direct and inherited references use the effective Minecraft stack. */
   resolutionScope?: "effective" | ExternResourceSource;
   resourceKind: ExternResourceKind;
   targetKind: RsglResourceExistenceKind;

@@ -152,6 +152,7 @@ describe("integrated RSGL manifest contract", () => {
     assert.strictEqual(schema.additionalProperties, false);
     assert.deepStrictEqual(Object.keys(schema.properties ?? {}).sort(), [
       "checkExternExistence",
+      "customResourcePackPaths",
       "defaultAssetsPath",
       "emitSourceMap",
       "extern",
@@ -162,7 +163,8 @@ describe("integrated RSGL manifest contract", () => {
       "outDir",
       "resourcePackRoots",
       "root",
-      "target"
+      "target",
+      "vanillaResourcePackPath"
     ]);
 
     const namespace = schema.properties?.namespace;

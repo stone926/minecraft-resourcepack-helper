@@ -104,6 +104,10 @@ function projectConfigurationDiagnosticCode(error: unknown): string {
     || topLevelProperty === "target"
     || topLevelProperty === "maxEvaluationItems"
     || topLevelProperty === "maxItemModelDepth"
+    || topLevelProperty === "vanillaResourcePackPath"
+    || topLevelProperty === "customResourcePackPaths"
+    || topLevelProperty === "defaultAssetsPath"
+    || topLevelProperty === "resourcePackRoots"
   ) {
     return "rsgl.invalidProjectConfiguration";
   }

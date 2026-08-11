@@ -372,7 +372,7 @@ describe("RSGL CLI", () => {
     }
   });
 
-  it("resolves a local texture when a more-specific vanilla extern is missing", () => {
+  it("prefers a local texture even when a more-specific vanilla extern also exists", () => {
     const root = createTempRoot();
     const previousCwd = process.cwd();
     const sourceRoot = path.join(root, "rsgl");
@@ -384,9 +384,19 @@ describe("RSGL CLI", () => {
       "block",
       "note_block_0.png"
     );
+    const vanillaTextureFile = path.join(
+      root,
+      "vanilla-assets",
+      "assets",
+      "minecraft",
+      "textures",
+      "block",
+      "note_block_0.png"
+    );
     try {
       fs.mkdirSync(sourceRoot, { recursive: true });
       fs.mkdirSync(path.dirname(textureFile), { recursive: true });
+      fs.mkdirSync(path.dirname(vanillaTextureFile), { recursive: true });
       fs.writeFileSync(path.join(root, "pack.mcmeta"), JSON.stringify({
         pack: { pack_format: 88, description: "test" }
       }));
@@ -411,6 +421,7 @@ describe("RSGL CLI", () => {
           "base64"
         )
       );
+      fs.copyFileSync(textureFile, vanillaTextureFile);
       process.chdir(root);
 
       const captured = captureIo();
@@ -544,8 +555,8 @@ describe("RSGL CLI", () => {
       fs.writeFileSync(path.join(root, "rsgl.config.json"), JSON.stringify({ unexpected: true }));
       fs.writeFileSync(path.join(projectRoot, "rsgl.config.json"), JSON.stringify({
         outDir: "generated pack",
-        defaultAssetsPath: path.relative(projectRoot, defaultAssets),
-        resourcePackRoots: [path.relative(projectRoot, customPack)],
+        vanillaResourcePackPath: path.relative(projectRoot, defaultAssets),
+        customResourcePackPaths: [path.relative(projectRoot, customPack)],
         checkExternExistence: false
       }));
 

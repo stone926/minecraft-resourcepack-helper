@@ -361,6 +361,77 @@ describe("RSGL extern declarations", () => {
     assert.strictEqual(externalUnits(result)[0].external?.source, "vanilla");
   });
 
+  it("uses the effective Minecraft pack winner instead of cross-source pattern specificity", () => {
+    const textureId = "minecraft:block/effective_winner";
+    const localTexture = path.resolve("local", "textures", "block", "effective_winner.png");
+    const customTexture = path.resolve("custom", "textures", "block", "effective_winner.png");
+    const vanillaTexture = path.resolve("vanilla", "textures", "block", "effective_winner.png");
+    const usages: Array<{ source: string; resolutionScope?: string; resolvedPath?: string }> = [];
+    let effectiveResolutionCalls = 0;
+    const result = compileSource([
+      "extern local texture minecraft:block/**",
+      "extern custom texture minecraft:block/*",
+      `extern vanilla texture ${textureId}`,
+      "model block effective_winner {",
+      `  textures { all: ${textureId} }`,
+      "}"
+    ], {
+      resourceResolution: (kind, id) => {
+        effectiveResolutionCalls++;
+        assert.deepStrictEqual([kind, id], ["texture", textureId]);
+        return {
+          resolvedPath: localTexture,
+          candidatePaths: [localTexture, customTexture, vanillaTexture],
+          source: "local"
+        };
+      },
+      externResourceResolution: () => {
+        throw new Error("source-scoped extern resolution must not choose an effective winner");
+      },
+      onExternResourceUsed: usage => usages.push({
+        source: usage.source,
+        resolutionScope: usage.resolutionScope,
+        resolvedPath: usage.resolvedPath
+      })
+    });
+
+    expectNoDiagnostics(result);
+    assert.strictEqual(effectiveResolutionCalls, 1);
+    assert.strictEqual(externalUnits(result)[0].external?.source, "local");
+    assert.deepStrictEqual(usages, [{
+      source: "local",
+      resolutionScope: "effective",
+      resolvedPath: localTexture
+    }]);
+    assert.deepStrictEqual(
+      result.dependencies.map(dependency => dependency.path),
+      [localTexture, customTexture, vanillaTexture]
+    );
+  });
+
+  it("rejects an effective winner whose physical source is not declared", () => {
+    const textureId = "minecraft:block/undeclared_local_override";
+    const localTexture = path.resolve("local", "textures", "block", "undeclared_local_override.png");
+    const result = compileSource([
+      `extern vanilla texture ${textureId}`,
+      "model block undeclared_local_override {",
+      `  textures { all: ${textureId} }`,
+      "}"
+    ], {
+      resourceResolution: () => ({
+        resolvedPath: localTexture,
+        candidatePaths: [localTexture],
+        source: "local"
+      })
+    });
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), [
+      "rsgl.undeclaredExternalResource"
+    ]);
+    assert.match(result.diagnostics[0].message, /no matching extern local declaration/);
+    assert.deepStrictEqual(externalUnits(result), []);
+  });
+
   it("falls back to a checked higher pack layer when the preferred source is missing", () => {
     const textureId = "minecraft:block/note_block_0";
     const vanillaCandidate = path.resolve("vanilla", "textures", "block", "note_block_0.png");

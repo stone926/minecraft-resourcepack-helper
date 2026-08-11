@@ -18,7 +18,11 @@ export interface RsglProjectConfig {
   outDir?: string;
   emitSourceMap?: boolean;
   manifest?: boolean;
+  vanillaResourcePackPath?: string | null;
+  customResourcePackPaths?: string[];
+  /** @deprecated Use `vanillaResourcePackPath`. Accepted for programmatic compatibility. */
   defaultAssetsPath?: string | null;
+  /** @deprecated Use `customResourcePackPaths`. Accepted for programmatic compatibility. */
   resourcePackRoots?: string[];
   extern?: RsglGlobalExternConfigEntry[];
   checkExternExistence?: boolean;
@@ -71,6 +75,8 @@ const configProperties = new Set([
   "outDir",
   "emitSourceMap",
   "manifest",
+  "vanillaResourcePackPath",
+  "customResourcePackPaths",
   "defaultAssetsPath",
   "resourcePackRoots",
   "extern",
@@ -99,13 +105,31 @@ export function parseRsglProjectConfig(value: unknown, configPath = "rsgl.config
 function parseRsglProjectConfigValue(value: unknown, configPath: string): RsglProjectConfig {
   const config = requireObject(value, configPath);
   rejectUnknownProperties(config, configProperties, configPath);
+  const vanillaResourcePack = canonicalConfigField(
+    config,
+    "vanillaResourcePackPath",
+    "defaultAssetsPath",
+    configPath
+  );
+  const customResourcePacks = canonicalConfigField(
+    config,
+    "customResourcePackPaths",
+    "resourcePackRoots",
+    configPath
+  );
   return {
     root: optionalString(config.root, `${configPath}.root`),
     outDir: optionalString(config.outDir, `${configPath}.outDir`),
     emitSourceMap: optionalBoolean(config.emitSourceMap, `${configPath}.emitSourceMap`),
     manifest: optionalBoolean(config.manifest, `${configPath}.manifest`),
-    defaultAssetsPath: optionalNullableString(config.defaultAssetsPath, `${configPath}.defaultAssetsPath`),
-    resourcePackRoots: optionalStringArray(config.resourcePackRoots, `${configPath}.resourcePackRoots`),
+    vanillaResourcePackPath: optionalNullableString(
+      vanillaResourcePack.value,
+      vanillaResourcePack.fieldPath
+    ),
+    customResourcePackPaths: optionalStringArray(
+      customResourcePacks.value,
+      customResourcePacks.fieldPath
+    ),
     extern: parseExternEntries(config.extern, `${configPath}.extern`),
     checkExternExistence: optionalBoolean(config.checkExternExistence, `${configPath}.checkExternExistence`),
     namespace: optionalNamespace(config.namespace, `${configPath}.namespace`),
@@ -217,17 +241,40 @@ export function resolveRsglProjectConfigPaths(
   const baseDirectory = path.dirname(path.resolve(configFileName));
   const resolveOptionalPath = (value: string | undefined): string | undefined =>
     value === undefined ? undefined : path.resolve(baseDirectory, value);
+  const vanillaResourcePackPath = projectVanillaResourcePackPath(config);
+  const customResourcePackPaths = projectCustomResourcePackPaths(config);
+  const canonicalConfig = { ...config };
+  delete canonicalConfig.defaultAssetsPath;
+  delete canonicalConfig.resourcePackRoots;
   return {
-    ...config,
+    ...canonicalConfig,
     root: resolveOptionalPath(config.root),
     outDir: config.outDir === undefined
       ? undefined
       : assertRsglOutputPackRoot(resolveOptionalPath(config.outDir)!, `${configFileName}.outDir`),
-    defaultAssetsPath: config.defaultAssetsPath === null
+    vanillaResourcePackPath: vanillaResourcePackPath === null
       ? null
-      : resolveOptionalPath(config.defaultAssetsPath),
-    resourcePackRoots: config.resourcePackRoots?.map(root => path.resolve(baseDirectory, root))
+      : resolveOptionalPath(vanillaResourcePackPath),
+    customResourcePackPaths: customResourcePackPaths?.map(root => path.resolve(baseDirectory, root))
   };
+}
+
+/** Returns the canonical vanilla pack path, falling back to its legacy API alias. */
+export function projectVanillaResourcePackPath(
+  config: RsglProjectConfig
+): string | null | undefined {
+  return config.vanillaResourcePackPath !== undefined
+    ? config.vanillaResourcePackPath
+    : config.defaultAssetsPath;
+}
+
+/** Returns canonical custom-pack paths, falling back to their legacy API alias. */
+export function projectCustomResourcePackPaths(
+  config: RsglProjectConfig
+): string[] | undefined {
+  return config.customResourcePackPaths !== undefined
+    ? config.customResourcePackPaths
+    : config.resourcePackRoots;
 }
 
 /**
@@ -372,6 +419,18 @@ function rejectUnknownProperties(
       throw invalidConfig(`${fieldPath}.${property}`, "unknown property.");
     }
   }
+}
+
+function canonicalConfigField(
+  config: Record<string, unknown>,
+  canonicalName: string,
+  legacyName: string,
+  configPath: string
+): { value: unknown; fieldPath: string } {
+  const hasCanonical = Object.prototype.hasOwnProperty.call(config, canonicalName);
+  return hasCanonical
+    ? { value: config[canonicalName], fieldPath: `${configPath}.${canonicalName}` }
+    : { value: config[legacyName], fieldPath: `${configPath}.${legacyName}` };
 }
 
 function optionalString(value: unknown, fieldPath: string): string | undefined {

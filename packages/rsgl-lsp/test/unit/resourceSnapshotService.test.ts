@@ -46,8 +46,8 @@ describe("RSGL LSP resource snapshot service", () => {
       fs.writeFileSync(path.join(projectRoot, "rsgl.config.json"), JSON.stringify({
         root: "src",
         outDir: path.relative(projectRoot, outputPack),
-        defaultAssetsPath: path.relative(projectRoot, vanillaRoot),
-        resourcePackRoots: [path.relative(projectRoot, customPack)]
+        vanillaResourcePackPath: path.relative(projectRoot, vanillaRoot),
+        customResourcePackPaths: [path.relative(projectRoot, customPack)]
       }));
 
       const context = projectContext({
@@ -92,9 +92,9 @@ describe("RSGL LSP resource snapshot service", () => {
       assert.deepStrictEqual(
         physical.map(edge => [edge.resolutionScope, edge.resolvedTarget?.uri]).sort(),
         [
-          ["custom", pathToFileURL(customTexture).toString()],
-          ["local", pathToFileURL(localTexture).toString()],
-          ["vanilla", pathToFileURL(vanillaTexture).toString()]
+          ["effective", pathToFileURL(customTexture).toString()],
+          ["effective", pathToFileURL(localTexture).toString()],
+          ["effective", pathToFileURL(vanillaTexture).toString()]
         ].sort()
       );
 

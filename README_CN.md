@@ -30,8 +30,8 @@ Minecraft 资源包助手是面向 Minecraft Java 版资源包作者的 VS Code 
 
 1. 从 [VS Code 扩展市场](https://marketplace.visualstudio.com/items?itemName=stone926.minecraft-resourcepack-helper) 安装扩展。
 2. 打开包含 Minecraft 资源包 `pack.mcmeta` 的文件夹。
-3. 如需让跳转、补全、诊断、资源关系图和模型预览回退到原版资源，配置 `McResHelper.defaultMcAssetsPath`。
-4. 可选：用 `McResHelper.resourcePackLoadOrder` 配置低优先级资源包根目录的绝对路径。
+3. 如需让跳转、补全、诊断、资源关系图和模型预览回退到原版资源，配置 `McResHelper.vanillaResourcePackPath`。
+4. 可选：用 `McResHelper.customResourcePackPaths` 配置低优先级资源包根目录的绝对路径。
 5. 打开受支持的资源包文件，使用跳转定义、路径建议、诊断、Minecraft 资源活动栏视图，或在模型 JSON 中打开模型预览。
 
 资源包或 `.rsgl` 文档会激活扩展。在只编辑 JSON 的工作流中，RSGL 运行时代码、语言服务器进程、源码 watcher 和构建 worker 会保持未加载，直到真实 RSGL 信号需要它们。
@@ -42,8 +42,10 @@ Minecraft 资源包助手是面向 Minecraft Java 版资源包作者的 VS Code 
 
 1. 当前正在编辑的 local 资源包。对于 RSGL 工程，它是由 `rsgl.config.json.outDir` 或资源包发现确定的 canonical output pack root。
 2. `pack.mcmeta` 中声明的启用 overlay 和 filter 规则。
-3. `rsgl.config.json.resourcePackRoots` 或 `McResHelper.resourcePackLoadOrder` 中配置的 custom 低优先级资源包，按高优先级到低优先级排序。
-4. `rsgl.config.json.defaultAssetsPath` 或 `McResHelper.defaultMcAssetsPath` 指向的 vanilla 资源。
+3. `rsgl.config.json.customResourcePackPaths` 或 `McResHelper.customResourcePackPaths` 中配置的 custom 低优先级资源包，按高优先级到低优先级排序。
+4. `rsgl.config.json.vanillaResourcePackPath` 或 `McResHelper.vanillaResourcePackPath` 指向的 vanilla 资源。
+
+已有配置仍可使用已弃用的 `resourcePackRoots`、`defaultAssetsPath`、`McResHelper.resourcePackLoadOrder` 和 `McResHelper.defaultMcAssetsPath` 兼容别名；新配置应使用上述 canonical 名称。
 
 物理文件和 live RSGL producer 通过同一个工程上下文解析。因此 JSON、shader、CIT 或 RSGL 对同一个 external/default 资源 ID 会选择相同的 effective local/custom/vanilla layer；归档形式的 custom 资源包和 vanilla jar 始终只读。
 
@@ -145,8 +147,8 @@ workspace/
 
 ## 配置项
 
-- `McResHelper.defaultMcAssetsPath`：原版 Minecraft 资源的绝对路径。可以指向 `assets` 文件夹、`assets/minecraft` 文件夹、包含 `assets/minecraft` 的资源包根目录，或原版 `client.jar`。
-- `McResHelper.resourcePackLoadOrder`：当前编辑资源包下层已启用资源包目录或 ZIP 的绝对路径列表，按高优先级到低优先级排序。解析时会先查当前资源包，再查该列表，最后查原版资源。
+- `McResHelper.vanillaResourcePackPath`：原版 Minecraft 资源的绝对路径。可以指向 `assets` 文件夹、`assets/minecraft` 文件夹、包含 `assets/minecraft` 的资源包根目录，或原版 `client.jar`。
+- `McResHelper.customResourcePackPaths`：当前编辑资源包下层已启用资源包目录或 ZIP 的绝对路径列表，按高优先级到低优先级排序。解析时会先查当前资源包，再查该列表，最后查原版资源。
 - `McResHelper.tipColorForUndefinedTextureVariables`：用于高亮模型文件中未定义 `#texture` 变量的颜色。
 - `McResHelper.rsgl.enabled`：`auto` 仅在相关信号出现时加载 RSGL；`on` 在发现工程后预加载 host；`off` 禁用其 runtime、进程、provider 与源码 watcher。静态语法高亮仍可使用。
 
@@ -154,8 +156,8 @@ workspace/
 
 ```json
 {
-  "McResHelper.defaultMcAssetsPath": "C:/.minecraft/my_test/26.2/assets/minecraft",
-  "McResHelper.resourcePackLoadOrder": [
+  "McResHelper.vanillaResourcePackPath": "C:/.minecraft/my_test/26.2/assets/minecraft",
+  "McResHelper.customResourcePackPaths": [
     "C:/.minecraft/resourcepacks/base_pack"
   ],
   "McResHelper.rsgl.enabled": "auto",
