@@ -344,14 +344,91 @@ describe("RSGL extern declarations", () => {
   });
 
   it("selects the most specific matching declaration", () => {
+    const existenceChecks: string[] = [];
     const result = compileSource([
-      "extern! custom model minecraft:block/**",
-      "extern! vanilla model minecraft:block/stone",
+      "extern custom model minecraft:block/**",
+      "extern vanilla model minecraft:block/stone",
       ...blockstateUsing("specific", "minecraft:block/stone")
-    ]);
+    ], {
+      externResourceExists: source => {
+        existenceChecks.push(source);
+        return true;
+      }
+    });
 
     expectNoDiagnostics(result);
+    assert.deepStrictEqual(existenceChecks, ["vanilla"]);
     assert.strictEqual(externalUnits(result)[0].external?.source, "vanilla");
+  });
+
+  it("falls back to a checked higher pack layer when the preferred source is missing", () => {
+    const textureId = "minecraft:block/note_block_0";
+    const vanillaCandidate = path.resolve("vanilla", "textures", "block", "note_block_0.png");
+    const localTexture = path.resolve("local", "textures", "block", "note_block_0.png");
+    const vanillaMetadata = path.resolve("vanilla", "pack.mcmeta");
+    const localMetadata = path.resolve("local", "pack.mcmeta");
+    const resolutionSources: string[] = [];
+    const usages: Array<{
+      source: string;
+      resolvedPath?: string;
+      candidatePaths?: readonly string[];
+      metadataPaths?: readonly string[];
+    }> = [];
+    const result = compileSource([
+      "extern local texture minecraft:block/**",
+      "extern vanilla texture minecraft:block/*",
+      "model block note_overlay {",
+      `  textures { all: ${textureId} }`,
+      "}"
+    ], {
+      externResourceResolution: (source, kind, id) => {
+        assert.deepStrictEqual([kind, id], ["texture", textureId]);
+        resolutionSources.push(source);
+        return source === "local"
+          ? {
+              resolvedPath: localTexture,
+              candidatePaths: [localTexture],
+              metadataPaths: [localMetadata]
+            }
+          : {
+              resolvedPath: null,
+              candidatePaths: [vanillaCandidate],
+              metadataPaths: [vanillaMetadata]
+            };
+      },
+      onExternResourceUsed: usage => usages.push(usage)
+    });
+
+    expectNoDiagnostics(result);
+    assert.deepStrictEqual(resolutionSources, ["vanilla", "local"]);
+    assert.strictEqual(externalUnits(result)[0].external?.source, "local");
+    assert.strictEqual(usages.length, 1);
+    assert.strictEqual(usages[0].source, "local");
+    assert.strictEqual(usages[0].resolvedPath, localTexture);
+    assert.deepStrictEqual(usages[0].candidatePaths, [vanillaCandidate, localTexture]);
+    assert.deepStrictEqual(usages[0].metadataPaths, [vanillaMetadata, localMetadata]);
+    assert.deepStrictEqual(
+      result.dependencies.map(dependency => dependency.path),
+      [vanillaCandidate, localTexture, vanillaMetadata, localMetadata]
+    );
+  });
+
+  it("does not weaken a checked preferred declaration with an unchecked fallback", () => {
+    const result = compileSource([
+      "extern! local texture minecraft:block/**",
+      "extern vanilla texture minecraft:block/*",
+      "model block checked_preference {",
+      "  textures { all: minecraft:block/missing_checked }",
+      "}"
+    ], {
+      externResourceExists: source => source === "local"
+    });
+
+    assert.deepStrictEqual(result.diagnostics.map(diagnostic => diagnostic.code), [
+      "rsgl.textureNotFound"
+    ]);
+    assert.strictEqual(externalUnits(result)[0].external?.source, "vanilla");
+    assert.strictEqual(externalUnits(result)[0].external?.skipExistenceCheck, false);
   });
 
   it("does not propagate a file-local extern through imports", () => {

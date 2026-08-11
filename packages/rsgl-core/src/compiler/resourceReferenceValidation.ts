@@ -1,3 +1,4 @@
+import { uniqueValues } from "../../../mc-assets/src";
 import {
   compareExternPatternSpecificity,
   externResourcePatternMatches,
@@ -36,6 +37,7 @@ import {
 } from "./validationPass";
 
 const virtualVanillaBuiltinModelPrefix = "minecraft:builtin/";
+const externSourcePreference = ["local", "custom", "vanilla"] as const;
 
 const resourceDiagnosticPresentation = {
   model: { code: "rsgl.modelNotFound", label: "Model" },
@@ -127,7 +129,7 @@ export function checkResourceExists(
     return { available: true, external: false, canonicalId: id, lookupId };
   }
 
-  const declaration = resolveExternDeclaration(
+  const declarationSelection = resolveExternDeclaration(
     kind,
     lookupId,
     externScopeFile ?? sourceFile,
@@ -136,24 +138,17 @@ export function checkResourceExists(
     diagnostics,
     range
   );
-  if (!declaration) {
+  if (!declarationSelection) {
     return { available: false, external: true, canonicalId: id, lookupId };
   }
 
-  const skipExistenceCheck = declaration.skipExistenceCheck
-    || declaration.checkExistence === false
-    || (declaration.checkExistence === undefined && options.checkExternExistence === false);
-  const resolution = skipExistenceCheck
-    ? undefined
-    : resolveExternalResource(options, declaration.source, kind, lookupId);
-  const resolvedPath = skipExistenceCheck ? null : resolution?.resolvedPath;
-  const exists = skipExistenceCheck
-    ? true
-    : resolution !== undefined
-      ? resolution.resolvedPath !== null
-      : options.externResourceExists
-        ? options.externResourceExists(declaration.source, kind, lookupId)
-        : (options.resourceExists?.(kind, lookupId) ?? false);
+  const resolved = resolveDeclaredExternalResource(
+    declarationSelection,
+    options,
+    kind,
+    lookupId
+  );
+  const { declaration, skipExistenceCheck, resolvedPath, exists } = resolved;
   options.onExternResourceUsed?.({
     source: declaration.source,
     resolutionScope: declaration.source,
@@ -173,11 +168,11 @@ export function checkResourceExists(
       resourceValueLocation?.generatedPath
     ),
     ...(resolvedPath ? { resolvedPath } : {}),
-    ...(resolution?.candidatePaths.length
-      ? { candidatePaths: resolution.candidatePaths }
+    ...(resolved.candidatePaths.length
+      ? { candidatePaths: resolved.candidatePaths }
       : {}),
-    ...(resolution?.metadataPaths?.length
-      ? { metadataPaths: resolution.metadataPaths }
+    ...(resolved.metadataPaths.length
+      ? { metadataPaths: resolved.metadataPaths }
       : {})
   });
   if (exists) {
@@ -188,8 +183,8 @@ export function checkResourceExists(
       lookupId,
       source: declaration.source,
       ...(resolvedPath ? { resolvedPath } : {}),
-      ...(resolution ? { candidatePaths: resolution.candidatePaths } : {}),
-      ...(resolution?.metadataPaths ? { metadataPaths: resolution.metadataPaths } : {})
+      ...(resolved.candidatePaths.length ? { candidatePaths: resolved.candidatePaths } : {}),
+      ...(resolved.metadataPaths.length ? { metadataPaths: resolved.metadataPaths } : {})
     };
   }
 
@@ -200,8 +195,8 @@ export function checkResourceExists(
     canonicalId: id,
     lookupId,
     source: declaration.source,
-    ...(resolution ? { candidatePaths: resolution.candidatePaths } : {}),
-    ...(resolution?.metadataPaths ? { metadataPaths: resolution.metadataPaths } : {})
+    ...(resolved.candidatePaths.length ? { candidatePaths: resolved.candidatePaths } : {}),
+    ...(resolved.metadataPaths.length ? { metadataPaths: resolved.metadataPaths } : {})
   };
 }
 
@@ -314,7 +309,7 @@ function resolveExternDeclaration(
   options: RsglResourceValidationOptions,
   diagnostics: RsglCompileDiagnostic[],
   range: ValidationRange
-): RsglExternDeclaration | null {
+): Extract<RsglExternDeclarationSelection, { kind: "selected" }> | null {
   const normalizedScopeFile = normalizeValidationFileName(externScopeFile);
   const selection = cachedExternDeclarationSelection(
     options,
@@ -345,7 +340,7 @@ function resolveExternDeclaration(
     );
     return null;
   }
-  return selection.declaration;
+  return selection;
 }
 
 function selectExternDeclaration(
@@ -374,22 +369,107 @@ function selectExternDeclaration(
     return { kind: "undeclared" };
   }
 
-  const sorted = [...candidates].sort((left, right) =>
-    compareExternPatternSpecificity(right.pattern, left.pattern)
-  );
-  const selected = sorted[0];
-  const equallySpecific = sorted.filter(candidate =>
-    compareExternPatternSpecificity(candidate.pattern, selected.pattern) === 0
-  );
-  const preferredSource = (["local", "custom", "vanilla"] as const)
-    .find(source => equallySpecific.some(candidate => candidate.source === source));
-  const sourceCandidates = preferredSource
-    ? equallySpecific.filter(candidate => candidate.source === preferredSource)
-    : equallySpecific;
+  const preferredBySource = externSourcePreference.flatMap(source => {
+    const sourceCandidates = candidates.filter(candidate => candidate.source === source);
+    if (sourceCandidates.length === 0) {
+      return [];
+    }
+    const sorted = sourceCandidates.sort((left, right) =>
+      compareExternPatternSpecificity(right.pattern, left.pattern)
+    );
+    const mostSpecific = sorted[0];
+    const equallySpecific = sorted.filter(candidate =>
+      compareExternPatternSpecificity(candidate.pattern, mostSpecific.pattern) === 0
+    );
+    return [equallySpecific.find(candidate => candidate.skipExistenceCheck) ?? mostSpecific];
+  });
+  preferredBySource.sort(compareExternDeclarationPreference);
+  const [declaration, ...fallbackDeclarations] = preferredBySource;
   return {
     kind: "selected",
-    declaration: sourceCandidates.find(candidate => candidate.skipExistenceCheck) ?? sourceCandidates[0]
+    declaration,
+    fallbackDeclarations
   };
+}
+
+interface ResolvedDeclaredExternalResource {
+  declaration: RsglExternDeclaration;
+  skipExistenceCheck: boolean;
+  resolvedPath: string | null;
+  exists: boolean;
+  candidatePaths: string[];
+  metadataPaths: string[];
+}
+
+/**
+ * Resolves the preferred extern declaration, then falls back only across other
+ * explicitly declared physical sources. A broader declaration from the same
+ * source cannot weaken a more-specific checked declaration.
+ */
+function resolveDeclaredExternalResource(
+  selection: Extract<RsglExternDeclarationSelection, { kind: "selected" }>,
+  options: RsglResourceValidationOptions,
+  kind: RsglResourceExistenceKind,
+  id: string
+): ResolvedDeclaredExternalResource {
+  const attempts: Array<{
+    declaration: RsglExternDeclaration;
+    skipExistenceCheck: boolean;
+    resolution?: RsglExternalResourceResolution;
+    exists: boolean;
+  }> = [];
+  const primarySourcePriority = externSourcePreference.indexOf(selection.declaration.source);
+  const fallbackDeclarations = selection.fallbackDeclarations.filter(declaration =>
+    externSourcePreference.indexOf(declaration.source) < primarySourcePriority
+  ).sort((left, right) =>
+    externSourcePreference.indexOf(left.source) - externSourcePreference.indexOf(right.source)
+  );
+  for (const [index, declaration] of [selection.declaration, ...fallbackDeclarations].entries()) {
+    const skipExistenceCheck = declaration.skipExistenceCheck
+      || declaration.checkExistence === false
+      || (declaration.checkExistence === undefined && options.checkExternExistence === false);
+    // A checked declaration may discover a concrete higher pack-layer override.
+    // It must not fall through to an unchecked declaration and silently weaken
+    // the existence guarantee selected by the more-specific pattern.
+    if (index > 0 && skipExistenceCheck) {
+      continue;
+    }
+    const resolution = skipExistenceCheck
+      ? undefined
+      : resolveExternalResource(options, declaration.source, kind, id);
+    const exists = skipExistenceCheck
+      ? true
+      : resolution !== undefined
+        ? resolution.resolvedPath !== null
+        : options.externResourceExists
+          ? options.externResourceExists(declaration.source, kind, id)
+          : (options.resourceExists?.(kind, id) ?? false);
+    attempts.push({ declaration, skipExistenceCheck, resolution, exists });
+    if (exists) {
+      break;
+    }
+  }
+
+  const chosen = attempts.find(attempt => attempt.exists) ?? attempts[0];
+  return {
+    declaration: chosen.declaration,
+    skipExistenceCheck: chosen.skipExistenceCheck,
+    resolvedPath: chosen.skipExistenceCheck ? null : chosen.resolution?.resolvedPath ?? null,
+    exists: chosen.exists,
+    candidatePaths: uniqueValues(attempts.flatMap(attempt => attempt.resolution?.candidatePaths ?? [])),
+    metadataPaths: uniqueValues(attempts.flatMap(attempt => attempt.resolution?.metadataPaths ?? []))
+  };
+}
+
+function compareExternDeclarationPreference(
+  left: RsglExternDeclaration,
+  right: RsglExternDeclaration
+): number {
+  const specificity = compareExternPatternSpecificity(right.pattern, left.pattern);
+  if (specificity !== 0) {
+    return specificity;
+  }
+  return externSourcePreference.indexOf(left.source) - externSourcePreference.indexOf(right.source);
 }
 
 function pushResourceDiagnostic(

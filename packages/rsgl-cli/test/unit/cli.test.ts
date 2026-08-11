@@ -372,6 +372,59 @@ describe("RSGL CLI", () => {
     }
   });
 
+  it("resolves a local texture when a more-specific vanilla extern is missing", () => {
+    const root = createTempRoot();
+    const previousCwd = process.cwd();
+    const sourceRoot = path.join(root, "rsgl");
+    const textureFile = path.join(
+      root,
+      "assets",
+      "minecraft",
+      "textures",
+      "block",
+      "note_block_0.png"
+    );
+    try {
+      fs.mkdirSync(sourceRoot, { recursive: true });
+      fs.mkdirSync(path.dirname(textureFile), { recursive: true });
+      fs.writeFileSync(path.join(root, "pack.mcmeta"), JSON.stringify({
+        pack: { pack_format: 88, description: "test" }
+      }));
+      fs.writeFileSync(path.join(root, "rsgl.config.json"), JSON.stringify({
+        root: "rsgl",
+        outDir: ".",
+        defaultAssetsPath: "vanilla-assets",
+        extern: [
+          { source: "local", kind: "texture", patterns: ["minecraft:block/**"] },
+          { source: "vanilla", kind: "texture", patterns: ["minecraft:block/*"] }
+        ]
+      }));
+      fs.writeFileSync(path.join(sourceRoot, "note_blocks.rsgl"), [
+        "model block note_overlay {",
+        "  textures { all: minecraft:block/note_block_0 }",
+        "}"
+      ].join("\n"));
+      fs.writeFileSync(
+        textureFile,
+        Buffer.from(
+          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+          "base64"
+        )
+      );
+      process.chdir(root);
+
+      const captured = captureIo();
+      const exitCode = runRsglCli(["check"], captured.io);
+
+      assert.strictEqual(exitCode, 0);
+      assert.doesNotMatch(captured.stderr(), /rsgl\.textureNotFound/);
+      assert.strictEqual(captured.stderr(), "");
+    } finally {
+      process.chdir(previousCwd);
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("reports malformed project configuration without exposing a stack trace", () => {
     const root = createTempRoot();
     const previousCwd = process.cwd();

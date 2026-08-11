@@ -6,7 +6,12 @@ import type {
 } from "./validationTypes";
 
 export type RsglExternDeclarationSelection =
-  | { readonly kind: "selected"; readonly declaration: RsglExternDeclaration }
+  | {
+      readonly kind: "selected";
+      readonly declaration: RsglExternDeclaration;
+      /** Best matching declaration from each remaining explicitly allowed source. */
+      readonly fallbackDeclarations: readonly RsglExternDeclaration[];
+    }
   | { readonly kind: "unsupported" }
   | { readonly kind: "undeclared" };
 
