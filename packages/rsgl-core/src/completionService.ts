@@ -6,6 +6,8 @@ import {
   getRsglCompletionContext,
   type RsglCompletionContext
 } from "./completionContext";
+import { withRsglCompletionEdits } from "./completionEdit";
+import type { TextRange } from "./parser";
 import { isItemModelCompletionKeyPosition } from "./itemModelCompletionContext";
 import type { ItemModelFormat } from "./itemModelSchema";
 import { callablePresentation } from "./languageIntelligence";
@@ -26,8 +28,14 @@ export type RsglCompletionItemKind =
 export interface RsglCompletionItem {
   label: string;
   insertText?: string;
+  insertTextFormat?: "snippet";
   detail: string;
   kind: RsglCompletionItemKind;
+  edit?: {
+    insert: TextRange;
+    replace: TextRange;
+    newText: string;
+  };
 }
 
 export type RsglCompletionNamespace = "value" | "type" | "both";
@@ -42,12 +50,12 @@ export function getRsglCompletionItems(
   projectTargetFormat?: ItemModelFormat
 ): RsglCompletionItem[] {
   const context = getRsglCompletionContext(text, offset, projectTargetFormat);
-  return getRsglCompletionItemsForContext(
+  return withRsglCompletionEdits(getRsglCompletionItemsForContext(
     context,
     semanticSymbols,
     typeAliases,
     namespace
-  );
+  ), text, offset);
 }
 
 /** Merges candidates from an already parsed completion context. */
@@ -112,7 +120,8 @@ function candidateCompletionItem(candidate: RsglCompletionCandidate): RsglComple
     label: candidate.label,
     kind: candidate.kind,
     detail: candidate.detail,
-    insertText: candidate.insertText
+    insertText: candidate.insertText,
+    ...(candidate.insertText ? { insertTextFormat: "snippet" as const } : {})
   };
 }
 

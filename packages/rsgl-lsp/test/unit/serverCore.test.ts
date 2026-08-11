@@ -80,6 +80,15 @@ function templateSymbol(name: string): RsglSymbol {
   };
 }
 
+function zeroWidthCompletionEdit(newText: string) {
+  const position = { line: 0, character: 0 };
+  return {
+    newText,
+    insert: { start: position, end: position },
+    replace: { start: position, end: position }
+  };
+}
+
 describe("RSGL LSP server core", () => {
   it("keeps the stable serverCore surface as a thin feature facade", () => {
     assert.strictEqual(completionItemsForDocument, completionItemsFeature);
@@ -1360,39 +1369,53 @@ describe("RSGL LSP server core", () => {
 
     const target = items.find(item => item.label === "target");
     assert.strictEqual(target?.kind, CompletionItemKind.Snippet);
-    assert.strictEqual(typeof target?.insertText, "string");
+    assert.strictEqual(typeof target?.textEdit?.newText, "string");
     assert.strictEqual(target?.insertTextFormat, InsertTextFormat.Snippet);
     assert.strictEqual(typeof target?.detail, "string");
 
     const seq = items.find(item => item.label === "seq");
     assert.strictEqual(seq?.kind, CompletionItemKind.Function);
+    assert.strictEqual(seq?.insertTextFormat, InsertTextFormat.Snippet);
+    assert.deepStrictEqual(
+      seq?.textEdit,
+      zeroWidthCompletionEdit("seq(${1:i} => \"minecraft:block/name_\" + ${1:i}, ${1:i}: ${2:0..3})")
+    );
+    const blockSource = "model block stone {\n  ";
+    const parent = completionItemsForContent(blockSource, blockSource.length, [])
+      .find(item => item.label === "parent");
+    assert.strictEqual(parent?.kind, CompletionItemKind.Property);
+    assert.strictEqual(parent?.insertTextFormat, InsertTextFormat.Snippet);
 
     const myCube = items.find(item => item.label === "myCube");
     assert.deepStrictEqual(myCube, {
       label: "myCube",
       kind: CompletionItemKind.Function,
-      detail: "template: myCube(): Unknown"
+      detail: "template: myCube(): Unknown",
+      textEdit: zeroWidthCompletionEdit("myCube")
     });
 
     const tex = items.find(item => item.label === "tex");
     assert.deepStrictEqual(tex, {
       label: "tex",
       kind: CompletionItemKind.Variable,
-      detail: "variable: TextureId"
+      detail: "variable: TextureId",
+      textEdit: zeroWidthCompletionEdit("tex")
     });
 
     const common = items.find(item => item.label === "common");
     assert.deepStrictEqual(common, {
       label: "common",
       kind: CompletionItemKind.Module,
-      detail: "namespace: module namespace"
+      detail: "namespace: module namespace",
+      textEdit: zeroWidthCompletionEdit("common")
     });
 
     const mapper = items.find(item => item.label === "mapper");
     assert.deepStrictEqual(mapper, {
       label: "mapper",
       kind: CompletionItemKind.Function,
-      detail: "variable: mapper(arg1: Number): String"
+      detail: "variable: mapper(arg1: Number): String",
+      textEdit: zeroWidthCompletionEdit("mapper")
     });
   });
 
@@ -1403,6 +1426,19 @@ describe("RSGL LSP server core", () => {
     assert.strictEqual(matches[0].kind, CompletionItemKind.Snippet);
   });
 
+  it("falls back to a replace TextEdit when the client lacks insert-replace support", () => {
+    const item = completionItemsForContent("replace", 3, [], false)
+      .find(candidate => candidate.label === "replace");
+
+    assert.deepStrictEqual(item?.textEdit, {
+      newText: "replace(${1:str}, ${2:old}, ${3:new})",
+      range: {
+        start: { line: 0, character: 0 },
+        end: { line: 0, character: 7 }
+      }
+    });
+  });
+
   it("maps model transform completion and formatting through the LSP protocol surface", () => {
     const completionSource = "template rotated() -> model {\n  ";
     const items = completionItemsForContent(completionSource, completionSource.length, []);
@@ -1411,7 +1447,7 @@ describe("RSGL LSP server core", () => {
     assert.strictEqual(transform?.kind, CompletionItemKind.Snippet);
     assert.strictEqual(transform?.insertTextFormat, InsertTextFormat.Snippet);
     assert.strictEqual(
-      transform?.insertText,
+      transform?.textEdit?.newText,
       "transform ${1|rotate_x,rotate_y,rotate_z|}(${2:90}) around [${3:8, 8, 8}] {\n  ${4}\n}"
     );
 
@@ -2105,10 +2141,27 @@ describe("RSGL LSP server core", () => {
       const deps = { loadProgramFromEntry: (fileName: string) => cache.loadProgramFromEntry(fileName) };
       const memberStart = mainText.lastIndexOf("name");
       const completionOffset = mainText.lastIndexOf("entry.name") + "entry.".length;
+      const completionPosition = mainDocument.positionAt(completionOffset);
+      const memberEndPosition = mainDocument.positionAt(memberStart + "name".length);
+      const memberEdit = (newText: string) => ({
+        newText,
+        insert: { start: completionPosition, end: completionPosition },
+        replace: { start: completionPosition, end: memberEndPosition }
+      });
 
       assert.deepStrictEqual(completionItemsForDocument(mainDocument, mainFile, completionOffset, deps), [
-        { label: "name", kind: CompletionItemKind.Property, detail: "property: String" },
-        { label: "top", kind: CompletionItemKind.Property, detail: "optional property: TextureId" }
+        {
+          label: "name",
+          kind: CompletionItemKind.Property,
+          detail: "property: String",
+          textEdit: memberEdit("name")
+        },
+        {
+          label: "top",
+          kind: CompletionItemKind.Property,
+          detail: "optional property: TextureId",
+          textEdit: memberEdit("top")
+        }
       ]);
       const hover = computeDocumentHover(mainDocument, mainFile, memberStart + 1, deps);
       assert.ok((hover?.contents as { value: string }).value.includes("property name: String"));

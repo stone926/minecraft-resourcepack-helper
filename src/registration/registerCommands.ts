@@ -36,8 +36,14 @@ export function registerCommands(context: vscode.ExtensionContext): void {
       internalCommands.showWorkspaceResourceCacheStats,
       () => vscode.window.showInformationMessage(JSON.stringify(workspaceResourceCache.getStats()))
     ),
-    vscode.commands.registerCommand(internalCommands.triggerResourceCompletion, () => {
+    vscode.commands.registerCommand(internalCommands.triggerResourceCompletion, (documentUri?: string) => {
       setTimeout(() => {
+        if (
+          documentUri
+          && vscode.window.activeTextEditor?.document.uri.toString() !== documentUri
+        ) {
+          return;
+        }
         void vscode.commands.executeCommand("editor.action.triggerSuggest");
       }, 0);
     })

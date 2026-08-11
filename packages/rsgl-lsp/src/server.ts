@@ -112,6 +112,7 @@ let publishedDependencyPaths = "";
 let workspaceNavigationRoots: string[] = [];
 let initializedWorkspaceNavigationRoots: string[] = [];
 let resourceNavigationRequestGeneration = 0;
+let completionInsertReplaceSupport = false;
 
 let validationSettings: RsglValidationSettings = {
   defaultAssetsPath: null,
@@ -153,6 +154,8 @@ const diagnosticScheduler = new DirtyDiagnosticScheduler<string>({
 semanticCache.setOpenTextDocumentProvider(fileName => openDocumentForFileName(fileName));
 
 connection.onInitialize(params => {
+  completionInsertReplaceSupport = params.capabilities.textDocument
+    ?.completion?.completionItem?.insertReplaceSupport === true;
   validationSettings = toValidationSettings(params.initializationOptions);
   replaceSemanticCache(validationSettings.stdlibRoot);
   initializedWorkspaceNavigationRoots = workspaceRootFileNamesFromInitialization(params);
@@ -530,7 +533,8 @@ function completionItemsForDocument(document: TextDocument, offset: number): Com
     document,
     nativeFileNameFromUri(document.uri),
     offset,
-    documentLanguageWorkspace()
+    documentLanguageWorkspace(),
+    completionInsertReplaceSupport
   );
 }
 

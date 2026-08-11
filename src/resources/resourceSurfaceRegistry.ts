@@ -63,7 +63,7 @@ export type JsonReferenceExtractor = (
 
 export type ResourceReferenceExtraction =
   | { mode: "json"; extract: JsonReferenceExtractor }
-  | { mode: "shader"; source: "shaders/core" | "shaders/post" }
+  | { mode: "shader"; source: "shaders/core" | "shaders/post" | "shaders/include" }
   | { mode: "registered"; id: string };
 
 export type ResourceGraphPreviewContext =
@@ -223,6 +223,7 @@ const referenceSurfaceRegistry = [
   },
   shaderSurface("shaderCore", "core", "shaders/core"),
   shaderSurface("shaderPost", "post", "shaders/post"),
+  shaderIncludeSurface(),
   {
     id: "citModel",
     documentKind: "citModel",
@@ -257,21 +258,6 @@ export type ResourceReferenceDocumentKind = typeof referenceSurfaceRegistry[numb
 
 export const resourceSurfaceRegistry: readonly ResourceSurfaceDescriptor[] = [
   ...referenceSurfaceRegistry,
-  {
-    id: "shaderInclude",
-    watcherPatterns: [`**/assets/*/${shaderDirectory}/**/*.glsl`],
-    capabilities: ["graph"],
-    graphFileExtensions: ["glsl", "vsh", "fsh"],
-    incomingReferenceRoots: [
-      { root: shaderDirectory },
-      { root: `${shaderDirectory}/core` },
-      { root: `${shaderDirectory}/include` }
-    ],
-    fileNamePattern: new RegExp(
-      `[\\\\/]assets[\\\\/][^\\\\/]+[\\\\/]${manifestDirectoryPattern(`${shaderDirectory}/include`)}[\\\\/].+\\.(?:glsl|vsh|fsh)$`,
-      "i"
-    )
-  },
   {
     id: "assetJsonWatcher",
     watcherPatterns: ["**/assets/**/*.json"],
@@ -550,6 +536,33 @@ function shaderSurface<const K extends "shaderCore" | "shaderPost">(
     graphFileExtensions: ["vsh", "fsh"],
     fileNamePattern: new RegExp(
       `[\\\\/]${manifestDirectoryPattern(`${shaderDirectory}/${folder}`)}[\\\\/].+\\.(?:vsh|fsh)$`,
+      "i"
+    )
+  };
+}
+
+function shaderIncludeSurface(): ResourceSurfaceDescriptor<"shaderInclude"> & {
+  documentKind: "shaderInclude";
+} {
+  const patterns = ["glsl", "vsh", "fsh"].map(extension =>
+    `**/assets/*/${shaderDirectory}/include/**/*.${extension}`
+  );
+  return {
+    id: "shaderInclude",
+    documentKind: "shaderInclude",
+    selectorPatterns: patterns,
+    watcherPatterns: patterns,
+    capabilities: referenceCapabilities,
+    referenceExtraction: { mode: "shader", source: "shaders/include" },
+    referenceTargets: ["shader"],
+    graphFileExtensions: ["glsl", "vsh", "fsh"],
+    incomingReferenceRoots: [
+      { root: shaderDirectory },
+      { root: `${shaderDirectory}/core` },
+      { root: `${shaderDirectory}/include` }
+    ],
+    fileNamePattern: new RegExp(
+      `[\\\\/]assets[\\\\/][^\\\\/]+[\\\\/]${manifestDirectoryPattern(`${shaderDirectory}/include`)}[\\\\/].+\\.(?:glsl|vsh|fsh)$`,
       "i"
     )
   };

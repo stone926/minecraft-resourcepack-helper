@@ -36,7 +36,7 @@ export function isResourceReferenceKind(value: string): value is ResourceReferen
   return (resourceReferenceKinds as readonly string[]).includes(value);
 }
 export type ResourceReferenceRelationship = "modelParent";
-export type ResourceReferenceResolveMode = "cit";
+export type ResourceReferenceResolveMode = "cit" | "relative";
 export type ResourceReferenceOrigin = "citAutoDiscovery";
 
 export interface ResourceReferenceDocument {

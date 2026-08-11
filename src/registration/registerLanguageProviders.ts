@@ -8,12 +8,17 @@ import { createResourceReferenceProvider } from "../providers/resourceReferenceP
 import type { ResourceUniverseNavigation } from "../services/resourceUniverseNavigation";
 import textureVarDefinitionProvider from "../providers/textureVarDefinitionProvider";
 import { getResourceDocumentSelectors } from "../resources/resourceSurfaceRegistry";
+import {
+  citCompletionTriggerCharacters,
+  resourceCompletionTriggerCharacters
+} from "./languageProviderTriggers";
 
 export function registerLanguageProviders(
   context: Pick<vscode.ExtensionContext, "subscriptions">,
   navigation: ResourceUniverseNavigation
 ): void {
   const resourceReferenceSelectors: vscode.DocumentFilter[] = getResourceDocumentSelectors("references");
+  const resourceCompletionSelectors: vscode.DocumentFilter[] = getResourceDocumentSelectors("completion");
   const textureVariableSelectors: vscode.DocumentFilter[] = getResourceDocumentSelectors("textureVariables");
   const citLanguageSelectors: vscode.DocumentFilter[] = getResourceDocumentSelectors("citLanguage");
   const citCodeActionSelectors: vscode.DocumentFilter[] = getResourceDocumentSelectors("citCodeAction");
@@ -34,20 +39,15 @@ export function registerLanguageProviders(
   ));
 
   context.subscriptions.push(vscode.languages.registerCompletionItemProvider(
-    resourceReferenceSelectors,
+    resourceCompletionSelectors,
     createResourceCompletionProvider(navigation),
-    "\"",
-    "<",
-    "/",
-    ":",
-    "="
+    ...resourceCompletionTriggerCharacters
   ));
 
   context.subscriptions.push(vscode.languages.registerCompletionItemProvider(
     citLanguageSelectors,
     citCompletionProvider,
-    "=",
-    "."
+    ...citCompletionTriggerCharacters
   ));
 
   context.subscriptions.push(vscode.languages.registerHoverProvider(

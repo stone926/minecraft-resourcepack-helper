@@ -107,6 +107,78 @@ describe("resource completion service", () => {
     }]);
   });
 
+  it("keeps relative shader completion on the current source directory", async () => {
+    const packRoot = path.resolve("virtual", "relative-shader-pack");
+    const documentFileName = path.join(
+      packRoot,
+      "assets",
+      "custom",
+      "shaders",
+      "post",
+      "nested",
+      "effect.fsh"
+    );
+    const host = new FakeResourceCompletionHost(packRoot);
+    host.setDirectoryEntries(path.dirname(documentFileName), [
+      entry("common.glsl", "file"),
+      entry("quoted\"name.glsl", "file"),
+      entry("line\nbreak.glsl", "file")
+    ]);
+
+    const candidates = await new ResourceCompletionService(host).getCompletionCandidates({
+      documentFileName,
+      reference: shaderReference("co"),
+      configuration: { resourcePackRoots: [path.resolve("virtual", "fallback-pack")] }
+    });
+
+    assert.deepStrictEqual(candidates.map(candidate => candidate.value), ["common.glsl"]);
+    assert.strictEqual(host.resourceRootRequestCount, 0);
+  });
+
+  it("rejects relative shader traversal before reading outside the namespace", async () => {
+    const packRoot = path.resolve("virtual", "relative-traversal-pack");
+    const documentFileName = path.join(
+      packRoot,
+      "assets",
+      "custom",
+      "shaders",
+      "post",
+      "effect.fsh"
+    );
+    const host = new FakeResourceCompletionHost(packRoot);
+
+    const candidates = await new ResourceCompletionService(host).getCompletionCandidates({
+      documentFileName,
+      reference: shaderReference("../../../"),
+      configuration: {}
+    });
+
+    assert.deepStrictEqual(candidates, []);
+    assert.deepStrictEqual(host.requestedDirectories, []);
+    assert.strictEqual(host.resourceRootRequestCount, 0);
+  });
+
+  it("does not mutate cached root arrays when adding a CIT local directory", async () => {
+    const packRoot = path.resolve("virtual", "cached-roots-pack");
+    const documentFileName = path.join(packRoot, "assets", "custom", "citresewn", "items", "item.properties");
+    const sharedRoots = [path.join(packRoot, "assets", "custom", "textures")];
+    const host: ResourceCompletionHost = {
+      getDirectoryEntries: async () => null,
+      getResourceRootCandidates: () => sharedRoots
+    };
+    const service = new ResourceCompletionService(host);
+    const request = {
+      documentFileName,
+      reference: textureReference("icon", { resolveMode: "cit" as const }),
+      configuration: {}
+    };
+
+    await service.getCompletionCandidates(request);
+    await service.getCompletionCandidates(request);
+
+    assert.deepStrictEqual(sharedRoots, [path.join(packRoot, "assets", "custom", "textures")]);
+  });
+
   it("filters last-known generated resources in the shared domain service", async () => {
     const packRoot = path.resolve("virtual", "generated-pack");
     const inventory: ResourceCompletionInventoryHost = {
@@ -133,7 +205,7 @@ describe("resource completion service", () => {
       label: "stone",
       kind: "file",
       value: "minecraft:block/stone",
-      filterText: "block/stone",
+      filterText: "minecraft:block/stone",
       retriggerSuggest: false
     }]);
   });
@@ -156,14 +228,35 @@ describe("resource completion service", () => {
 
     const candidates = await new ResourceCompletionService(host, inventory).getCompletionCandidates({
       documentFileName: modelDocument(packRoot),
-      reference: textureReference("minecraft:block/st"),
+      reference: textureReference("block/st"),
       configuration: {}
     });
 
     assert.strictEqual(
-      candidates.filter(candidate => candidate.value === "minecraft:block/stone").length,
+      candidates.filter(candidate => candidate.value === "block/stone").length,
       1
     );
+  });
+
+  it("filters physical entries that cannot form valid Minecraft resource ids", async () => {
+    const packRoot = path.resolve("virtual", "invalid-name-pack");
+    const host = new FakeResourceCompletionHost(packRoot);
+    host.setDirectoryEntries(
+      path.join(packRoot, "assets", "minecraft", "textures", "block"),
+      [
+        entry("stone.png", "file"),
+        entry("Bad Name.png", "file"),
+        entry("quoted\"name.png", "file")
+      ]
+    );
+
+    const candidates = await new ResourceCompletionService(host).getCompletionCandidates({
+      documentFileName: modelDocument(packRoot),
+      reference: textureReference("block/"),
+      configuration: {}
+    });
+
+    assert.deepStrictEqual(candidates.map(candidate => candidate.value), ["block/stone"]);
   });
 
   it("keeps physical completion available when generated inventory rejects", async () => {
@@ -214,6 +307,8 @@ describe("resource completion service", () => {
 class FakeResourceCompletionHost implements ResourceCompletionHost {
   private readonly entries = new Map<string, ResourceCompletionDirectoryEntry[]>();
   private readonly metadata = new Map<string, PackMetadata>();
+  readonly requestedDirectories: string[] = [];
+  resourceRootRequestCount = 0;
 
   constructor(private readonly packRoot: string) {}
 
@@ -226,6 +321,7 @@ class FakeResourceCompletionHost implements ResourceCompletionHost {
   }
 
   async getDirectoryEntries(directory: string): Promise<readonly ResourceCompletionDirectoryEntry[] | null> {
+    this.requestedDirectories.push(normalizePathKey(directory));
     return this.entries.get(normalizePathKey(directory)) ?? null;
   }
 
@@ -234,6 +330,7 @@ class FakeResourceCompletionHost implements ResourceCompletionHost {
     resourcePath: string,
     namespace: string
   ): string[] {
+    this.resourceRootRequestCount++;
     return getDocumentResourceRootCandidates(
       request.sourceFileName,
       request.source,
@@ -276,5 +373,17 @@ function textureReference(
     extension: "png",
     kind: "texture",
     ...overrides
+  };
+}
+
+function shaderReference(value: string): ResourceReference {
+  return {
+    value,
+    valueNode: {},
+    target: "shaders/post/nested",
+    source: "shaders/post/nested",
+    extension: null,
+    kind: "shader",
+    resolveMode: "relative"
   };
 }

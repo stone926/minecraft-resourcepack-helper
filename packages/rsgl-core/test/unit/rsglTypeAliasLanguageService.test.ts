@@ -10,6 +10,10 @@ import {
 } from "../../src/languageService";
 import { RsglWorkspaceSemanticCache } from "../../src/workspaceSemantic";
 
+function completionSummary(items: ReturnType<typeof getRsglDocumentCompletionItems>) {
+  return items.map(item => ({ label: item.label, kind: item.kind, detail: item.detail }));
+}
+
 describe("RSGL type alias language service", () => {
   it("uses recovered type nodes for incomplete type-position completion", () => {
     const workspace = {
@@ -119,7 +123,7 @@ describe("RSGL type alias language service", () => {
         workspace
       )
         .find(item => item.label === "Local");
-      assert.deepStrictEqual(completion, {
+      assert.deepStrictEqual(completionSummary(completion ? [completion] : [])[0], {
         label: "Local",
         kind: "struct",
         detail: "type alias: { name: String, top?: TextureId }"

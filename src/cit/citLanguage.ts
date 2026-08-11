@@ -44,7 +44,8 @@ export interface CitCompletionCandidate {
 }
 
 export interface CitCompletionResult {
-  range: CitTextRange;
+  insertingRange: CitTextRange;
+  replacingRange: CitTextRange;
   candidates: CitCompletionCandidate[];
 }
 
@@ -84,8 +85,15 @@ export function getCitCompletionResult(
   const spec = getEffectiveSpec(document.fileName, entries, locale);
   if (lineContext.kind === "key") {
     return {
-      range: lineContext.range,
-      candidates: getKeyCompletionCandidates(spec, entries, lineContext.prefix, lineContext.currentLine)
+      insertingRange: lineContext.insertingRange,
+      replacingRange: lineContext.replacingRange,
+      candidates: getKeyCompletionCandidates(
+        spec,
+        entries,
+        lineContext.prefix,
+        lineContext.currentLine,
+        !lineContext.hasSeparator
+      )
     };
   }
 
@@ -100,7 +108,8 @@ export function getCitCompletionResult(
   }
 
   return {
-    range: lineContext.range,
+    insertingRange: lineContext.insertingRange,
+    replacingRange: lineContext.replacingRange,
     candidates: getValueCompletionCandidates(resolution.spec, lineContext.prefix, resources)
   };
 }
@@ -152,19 +161,36 @@ function getLineCompletionContext(
   lineText: string,
   position: CitPropertiesPosition
 ): (
-  | { kind: "key"; prefix: string; range: CitTextRange; currentLine: number }
-  | { kind: "value"; prefix: string; range: CitTextRange }
+  | {
+      kind: "key";
+      prefix: string;
+      insertingRange: CitTextRange;
+      replacingRange: CitTextRange;
+      currentLine: number;
+      hasSeparator: boolean;
+    }
+  | {
+      kind: "value";
+      prefix: string;
+      insertingRange: CitTextRange;
+      replacingRange: CitTextRange;
+    }
 ) | null {
   const contentStart = firstNonWhitespaceIndex(lineText);
   if (contentStart === lineText.length) {
     return {
       kind: "key",
       prefix: "",
-      range: {
+      insertingRange: {
         start: { line: position.line, character: contentStart },
         end: { line: position.line, character: position.character }
       },
-      currentLine: position.line + 1
+      replacingRange: {
+        start: { line: position.line, character: contentStart },
+        end: { line: position.line, character: position.character }
+      },
+      currentLine: position.line + 1,
+      hasSeparator: false
     };
   }
 
@@ -174,16 +200,23 @@ function getLineCompletionContext(
 
   const separator = findPropertySeparator(lineText, contentStart);
   if (separator < 0 || position.character <= separator) {
-    const keyEnd = separator < 0 ? position.character : trimEndIndex(lineText, separator);
+    const keyEnd = separator < 0
+      ? trimEndIndex(lineText, lineText.length)
+      : trimEndIndex(lineText, separator);
     const end = Math.max(contentStart, keyEnd, position.character);
     return {
       kind: "key",
       prefix: lineText.slice(contentStart, position.character),
-      range: {
+      insertingRange: {
+        start: { line: position.line, character: contentStart },
+        end: { line: position.line, character: position.character }
+      },
+      replacingRange: {
         start: { line: position.line, character: contentStart },
         end: { line: position.line, character: end }
       },
-      currentLine: position.line + 1
+      currentLine: position.line + 1,
+      hasSeparator: separator >= 0
     };
   }
 
@@ -192,9 +225,16 @@ function getLineCompletionContext(
   return {
     kind: "value",
     prefix: lineText.slice(tokenStart, position.character),
-    range: {
+    insertingRange: {
       start: { line: position.line, character: tokenStart },
       end: { line: position.line, character: position.character }
+    },
+    replacingRange: {
+      start: { line: position.line, character: tokenStart },
+      end: {
+        line: position.line,
+        character: findValueTokenEnd(lineText, position.character)
+      }
     }
   };
 }
@@ -203,7 +243,8 @@ function getKeyCompletionCandidates(
   spec: ResolvedCitSpec,
   entries: CitPropertyEntry[],
   prefix: string,
-  currentLine: number
+  currentLine: number,
+  appendSeparator: boolean
 ): CitCompletionCandidate[] {
   const usedSingletonKeys = new Set<string>();
   for (const entry of entries) {
@@ -224,11 +265,11 @@ function getKeyCompletionCandidates(
       const patternKey = key.key.endsWith(".");
       return {
         label: key.key,
-        insertText: patternKey ? key.key : `${key.key}=`,
+        insertText: patternKey || !appendSeparator ? key.key : `${key.key}=`,
         kind: "key",
         detail: key.title,
         documentation: key.description,
-        triggerSuggest: patternKey
+        triggerSuggest: patternKey || appendSeparator
       };
     });
 }
@@ -300,6 +341,26 @@ function findValueTokenStart(lineText: string, valueStart: number, cursor: numbe
     }
   }
   return valueStart;
+}
+
+function findValueTokenEnd(lineText: string, cursor: number): number {
+  for (let index = cursor; index < lineText.length; index++) {
+    const character = lineText[index];
+    if (character === " " || character === "\t" || character === "\f") {
+      return index;
+    }
+  }
+  return cursor <= lineText.length - 1 && hasContinuationMarker(lineText)
+    ? lineText.length - 1
+    : lineText.length;
+}
+
+function hasContinuationMarker(lineText: string): boolean {
+  let backslashes = 0;
+  for (let index = lineText.length - 1; index >= 0 && lineText[index] === "\\"; index--) {
+    backslashes++;
+  }
+  return backslashes % 2 === 1;
 }
 
 function toTextRange(location: CitPropertyEntry["keyRange"]): CitTextRange {

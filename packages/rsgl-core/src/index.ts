@@ -1,6 +1,7 @@
 export * from "./arguments";
 export * from "./build";
 export * from "./completionData";
+export * from "./completionEdit";
 export * from "./completionScope";
 export * from "./completionService";
 export * from "./externDeclarations";

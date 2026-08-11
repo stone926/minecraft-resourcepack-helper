@@ -1,12 +1,18 @@
-import { parse, type AnyNode, type DocumentNode, type MemberNode } from "@humanwhocodes/momoa";
+import {
+  parse,
+  type AnyNode,
+  type DocumentNode,
+  type MemberNode,
+  type ParseOptions
+} from "@humanwhocodes/momoa";
 
 export type JsonAstNode = AnyNode;
 export type JsonDocumentNode = DocumentNode;
 export type JsonMemberNode = MemberNode;
 
-export function parseJsonAst(text: string): DocumentNode | null {
+export function parseJsonAst(text: string, options?: ParseOptions): DocumentNode | null {
   try {
-    return parse(text);
+    return parse(text, options);
   } catch {
     return null;
   }

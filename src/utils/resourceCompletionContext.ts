@@ -1,12 +1,15 @@
 import { parseJsonAst } from "./jsonAst";
 import { isInArea } from "./locationChecker";
 import { TextOffsetMap } from "./textOffsets";
+import { decodeJsonStringContent } from "./resourceCompletionEdits";
+import { getResourceReferenceExtraction } from "../resources/resourceSurfaceRegistry";
 import {
   getReferencesForDocumentKind,
   getResourceReferenceDocumentKind,
   ResourceReference,
   ResourceReferenceDocument
 } from "./resourceReferences";
+import { getShaderSourceDirectory } from "./resourceReferences/shaderRefs";
 
 export interface ResourceCompletionTextPosition {
   line: number;
@@ -20,28 +23,33 @@ export interface ResourceCompletionTextRange {
 
 export interface InferredResourceCompletionContext {
   reference: ResourceReference;
-  replacementRange: ResourceCompletionTextRange;
-  includeQuotes: boolean;
+  insertingRange: ResourceCompletionTextRange;
+  replacingRange: ResourceCompletionTextRange;
+  insertPrefix: string;
+  insertSuffix: string;
 }
 
 interface CompletionPatch {
   text: string;
   probeOffset: number;
-  replacementRange: ResourceCompletionTextRange;
-  includeQuotes: boolean;
+  insertingRange: ResourceCompletionTextRange;
+  replacingRange: ResourceCompletionTextRange;
+  insertPrefix: string;
+  insertSuffix: string;
+  completionValue?: string;
 }
 
 export function inferIncompleteResourceCompletionContext(
   document: ResourceReferenceDocument,
   position: ResourceCompletionTextPosition
 ): InferredResourceCompletionContext | null {
-  if (document.languageId !== "json") {
-    return null;
-  }
-
   const documentKind = getResourceReferenceDocumentKind(document.fileName);
   if (!documentKind) {
     return null;
+  }
+
+  if (document.languageId !== "json") {
+    return inferIncompleteShaderCompletionContext(document, position, documentKind);
   }
 
   const text = document.getText();
@@ -52,30 +60,35 @@ export function inferIncompleteResourceCompletionContext(
   }
 
   const patch =
-    createUnclosedStringPatch(text, textOffsets, position, offset) ??
+    createStringPatch(text, textOffsets, position, offset) ??
     createMissingValuePatch(text, position, offset);
   if (!patch) {
     return null;
   }
 
-  const ast = parseJsonAst(patch.text);
+  const repaired = repairMissingJsonValues(patch.text, patch.probeOffset);
+  const ast = parseJsonAst(repaired.text, { allowTrailingCommas: true });
   if (!ast) {
     return null;
   }
 
-  const probePosition = new TextOffsetMap(patch.text).positionAt(patch.probeOffset);
+  const probePosition = new TextOffsetMap(repaired.text).positionAt(repaired.probeOffset);
   const reference = getReferencesForDocumentKind(ast, documentKind, document.fileName).find(item =>
     isInArea(probePosition.line + 1, probePosition.character + 1, item.valueNode.valueLoc ?? item.valueNode.loc)
   );
 
   return reference ? {
-    reference,
-    replacementRange: patch.replacementRange,
-    includeQuotes: patch.includeQuotes
+    reference: patch.completionValue === undefined
+      ? reference
+      : { ...reference, value: patch.completionValue },
+    insertingRange: patch.insertingRange,
+    replacingRange: patch.replacingRange,
+    insertPrefix: patch.insertPrefix,
+    insertSuffix: patch.insertSuffix
   } : null;
 }
 
-function createUnclosedStringPatch(
+function createStringPatch(
   text: string,
   textOffsets: TextOffsetMap,
   position: ResourceCompletionTextPosition,
@@ -86,14 +99,46 @@ function createUnclosedStringPatch(
     return null;
   }
 
+  const stringEnd = findStringEnd(text, stringStart);
+  const contentStart = stringStart + 1;
+  if (stringEnd !== null) {
+    if (offset < contentStart || stringEnd < offset) {
+      return null;
+    }
+    const completionValue = decodeJsonStringContent(text.slice(contentStart, offset));
+    if (completionValue === null) {
+      return null;
+    }
+    return {
+      text,
+      probeOffset: offset,
+      insertingRange: {
+        start: textOffsets.positionAt(contentStart),
+        end: position
+      },
+      replacingRange: {
+        start: textOffsets.positionAt(contentStart),
+        end: textOffsets.positionAt(stringEnd)
+      },
+      insertPrefix: "",
+      insertSuffix: "",
+      completionValue
+    };
+  }
+
   return {
     text: insertAt(text, offset, "\""),
     probeOffset: offset,
-    replacementRange: {
-      start: textOffsets.positionAt(stringStart + 1),
+    insertingRange: {
+      start: textOffsets.positionAt(contentStart),
       end: position
     },
-    includeQuotes: false
+    replacingRange: {
+      start: textOffsets.positionAt(contentStart),
+      end: position
+    },
+    insertPrefix: "",
+    insertSuffix: "\""
   };
 }
 
@@ -109,11 +154,65 @@ function createMissingValuePatch(
   return {
     text: insertAt(text, offset, "\"\""),
     probeOffset: offset + 1,
-    replacementRange: {
+    insertingRange: {
       start: position,
       end: position
     },
-    includeQuotes: true
+    replacingRange: {
+      start: position,
+      end: position
+    },
+    insertPrefix: "\"",
+    insertSuffix: "\""
+  };
+}
+
+function inferIncompleteShaderCompletionContext(
+  document: ResourceReferenceDocument,
+  position: ResourceCompletionTextPosition,
+  documentKind: NonNullable<ReturnType<typeof getResourceReferenceDocumentKind>>
+): InferredResourceCompletionContext | null {
+  const extraction = getResourceReferenceExtraction(documentKind);
+  if (extraction?.mode !== "shader") {
+    return null;
+  }
+
+  const text = document.getText();
+  const textOffsets = new TextOffsetMap(text);
+  const offset = textOffsets.offsetAt(position);
+  if (offset === null) {
+    return null;
+  }
+  const lineStart = Math.max(text.lastIndexOf("\n", offset - 1), text.lastIndexOf("\r", offset - 1)) + 1;
+  const linePrefix = text.slice(lineStart, offset);
+  const match = /#\s*moj_import\s*(<|")([^>"\r\n]*)$/.exec(linePrefix);
+  if (!match) {
+    return null;
+  }
+
+  const opening = match[1];
+  const value = match[2];
+  const valueStart = lineStart + (match.index ?? 0) + match[0].length - value.length;
+  const source = getShaderSourceDirectory(document.fileName, extraction.source);
+  const relative = opening === "\"";
+  const range = {
+    start: textOffsets.positionAt(valueStart),
+    end: position
+  };
+  return {
+    reference: {
+      value,
+      valueNode: {},
+      target: relative ? source : "shaders/include",
+      source,
+      extension: null,
+      kind: "shader",
+      ...(relative ? { resolveMode: "relative" as const } : {})
+    },
+    insertingRange: range,
+    replacingRange: range,
+    insertPrefix: "",
+    insertSuffix: relative ? "\"" : ">"
   };
 }
 
@@ -146,6 +245,67 @@ function findOpenStringStart(text: string, offset: number): number | null {
   }
 
   return inString ? stringStart : null;
+}
+
+function findStringEnd(text: string, stringStart: number): number | null {
+  let escaping = false;
+  for (let index = stringStart + 1; index < text.length; index++) {
+    const character = text[index];
+    if (escaping) {
+      escaping = false;
+    } else if (character === "\\") {
+      escaping = true;
+    } else if (character === "\"") {
+      return index;
+    } else if (character === "\r" || character === "\n") {
+      return null;
+    }
+  }
+  return null;
+}
+
+function repairMissingJsonValues(text: string, probeOffset: number): { text: string; probeOffset: number } {
+  const insertions: number[] = [];
+  let inString = false;
+  let escaping = false;
+  for (let index = 0; index < text.length; index++) {
+    const character = text[index];
+    if (inString) {
+      if (escaping) {
+        escaping = false;
+      } else if (character === "\\") {
+        escaping = true;
+      } else if (character === "\"") {
+        inString = false;
+      }
+      continue;
+    }
+    if (character === "\"") {
+      inString = true;
+      continue;
+    }
+    if (character !== ":") {
+      continue;
+    }
+    const next = nextNonWhitespace(text, index + 1);
+    if (next === null || text[next] === "," || text[next] === "}" || text[next] === "]") {
+      insertions.push(index + 1);
+    }
+  }
+  if (insertions.length === 0) {
+    return { text, probeOffset };
+  }
+
+  let repaired = text;
+  let adjustedProbe = probeOffset;
+  for (let index = insertions.length - 1; index >= 0; index--) {
+    const insertion = insertions[index];
+    repaired = insertAt(repaired, insertion, "null");
+    if (insertion <= adjustedProbe) {
+      adjustedProbe += 4;
+    }
+  }
+  return { text: repaired, probeOffset: adjustedProbe };
 }
 
 function isMissingValuePosition(text: string, offset: number): boolean {

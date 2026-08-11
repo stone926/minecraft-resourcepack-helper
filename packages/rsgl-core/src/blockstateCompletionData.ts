@@ -8,7 +8,7 @@ import type { BlockstateMode } from "./parser";
 const variantsEntryCompletions = [
   {
     label: "variant entry",
-    insertText: "case { ${1:facing}: ${2:north} } => ${3:minecraft:block/stone}${4: with { y: 90 }}",
+    insertText: "case { ${1:facing}: ${2:north} } => ${3:minecraft:block/stone}${4: with { y: 90 \\}}",
     detail: "Blockstate variant entry",
     kind: "snippet"
   },
@@ -29,19 +29,19 @@ const variantsEntryCompletions = [
 const multipartEntryCompletions = [
   {
     label: "part when",
-    insertText: "part when { ${1:facing}: ${2:north} } => ${3:minecraft:block/stone}${4: with { y: 90 }}",
+    insertText: "part when { ${1:facing}: ${2:north} } => ${3:minecraft:block/stone}${4: with { y: 90 \\}}",
     detail: "Multipart equality-record entry",
     kind: "snippet"
   },
   {
     label: "part when predicate",
-    insertText: "part when $state.${1:facing} == ${2:north} => ${3:minecraft:block/stone}${4: with { y: 90 }}",
+    insertText: "part when \\$state.${1:facing} == ${2:north} => ${3:minecraft:block/stone}${4: with { y: 90 \\}}",
     detail: "Multipart StatePredicate entry",
     kind: "snippet"
   },
   {
     label: "part always",
-    insertText: "part always => ${1:minecraft:block/stone}${2: with { y: 90 }}",
+    insertText: "part always => ${1:minecraft:block/stone}${2: with { y: 90 \\}}",
     detail: "Unconditional multipart entry",
     kind: "snippet"
   },
@@ -62,7 +62,7 @@ export const blockstateChoiceCompletions = [
   },
   {
     label: "weighted option",
-    insertText: "option ${1:minecraft:block/stone}${2: with { y: 90 }} weight ${3:2}",
+    insertText: "option ${1:minecraft:block/stone}${2: with { y: 90 \\}} weight ${3:2}",
     detail: "Weighted random blockstate model option",
     kind: "snippet"
   }

@@ -9,6 +9,11 @@ import { workspaceResourceCache } from "../services/workspaceResourceCache";
 import {
   inferIncompleteResourceCompletionContext
 } from "../utils/resourceCompletionContext";
+import {
+  buildResourceCompletionInsertion,
+  decodeJsonStringContent,
+  type ResourceCompletionValueSyntax
+} from "../utils/resourceCompletionEdits";
 import { findResourceReferenceAtPosition, type ResourceReference } from "../utils/resourceReferences";
 import { getResourceConfiguration } from "../utils/resourceConfiguration";
 import { toVscodeRange } from "../utils/resourceLocationVscode";
@@ -17,8 +22,12 @@ import { rangeInsideString } from "../utils/resourceRange";
 interface ResourceCompletionContext {
   reference: ResourceReference;
   documentFileName: string;
-  replacementRange: vscode.Range;
-  includeQuotes: boolean;
+  documentUri: string;
+  insertingRange: vscode.Range;
+  replacingRange: vscode.Range;
+  insertPrefix: string;
+  insertSuffix: string;
+  valueSyntax: ResourceCompletionValueSyntax;
 }
 
 export const triggerResourceCompletionCommand = internalCommands.triggerResourceCompletion;
@@ -28,17 +37,26 @@ export function createResourceCompletionProvider(
 ): vscode.CompletionItemProvider {
   const resourceCompletionService = new ResourceCompletionService(workspaceResourceCache, navigation);
   return {
-    async provideCompletionItems(document: vscode.TextDocument, position: vscode.Position) {
+    async provideCompletionItems(
+      document: vscode.TextDocument,
+      position: vscode.Position,
+      cancellationToken: vscode.CancellationToken
+    ) {
       const context = getResourceCompletionContext(document, position);
       if (!context) {
         return null;
       }
+
+      const requestedVersion = document.version;
 
       const candidates = await resourceCompletionService.getCompletionCandidates({
         documentFileName: context.documentFileName,
         reference: context.reference,
         configuration: getResourceConfiguration()
       });
+      if (cancellationToken.isCancellationRequested || document.version !== requestedVersion) {
+        return null;
+      }
       const items = candidates.map(candidate => createCompletionItem(candidate, context));
 
       return items.length > 0 ? items : null;
@@ -53,8 +71,28 @@ export default resourceCompletionProvider;
 function getResourceCompletionContext(document: vscode.TextDocument, position: vscode.Position): ResourceCompletionContext | null {
   const reference = findResourceReferenceAtPosition(document, position);
   if (reference) {
-    const replacementRange = rangeInsideString(reference.valueNode);
-    return replacementRange ? { reference, documentFileName: document.fileName, replacementRange, includeQuotes: false } : null;
+    const replacingRange = rangeInsideString(reference.valueNode);
+    if (!replacingRange?.isSingleLine || !replacingRange.contains(position)) {
+      return null;
+    }
+    const insertingRange = new vscode.Range(replacingRange.start, position);
+    const rawPrefix = document.getText(insertingRange);
+    const value = document.languageId === "json"
+      ? decodeJsonStringContent(rawPrefix)
+      : rawPrefix;
+    if (value === null) {
+      return null;
+    }
+    return {
+      reference: { ...reference, value },
+      documentFileName: document.fileName,
+      documentUri: document.uri.toString(),
+      insertingRange,
+      replacingRange,
+      insertPrefix: "",
+      insertSuffix: "",
+      valueSyntax: document.languageId === "json" ? "jsonString" : "plain"
+    };
   }
 
   const inferredContext = inferIncompleteResourceCompletionContext(document, position);
@@ -65,8 +103,12 @@ function getResourceCompletionContext(document: vscode.TextDocument, position: v
   return {
     reference: inferredContext.reference,
     documentFileName: document.fileName,
-    replacementRange: toVscodeRange(inferredContext.replacementRange),
-    includeQuotes: inferredContext.includeQuotes
+    documentUri: document.uri.toString(),
+    insertingRange: toVscodeRange(inferredContext.insertingRange),
+    replacingRange: toVscodeRange(inferredContext.replacingRange),
+    insertPrefix: inferredContext.insertPrefix,
+    insertSuffix: inferredContext.insertSuffix,
+    valueSyntax: document.languageId === "json" ? "jsonString" : "plain"
   };
 }
 
@@ -75,15 +117,23 @@ function createCompletionItem(
   context: ResourceCompletionContext
 ): vscode.CompletionItem {
   const item = new vscode.CompletionItem(candidate.label, completionItemKind(candidate));
-  item.range = context.replacementRange;
+  item.range = {
+    inserting: context.insertingRange,
+    replacing: context.replacingRange
+  };
   item.filterText = candidate.filterText;
-  item.insertText = buildCompletionInsertText(
+  const insertion = buildResourceCompletionInsertion(
     candidate.value,
-    context.includeQuotes,
+    context.valueSyntax,
+    context.insertPrefix,
+    context.insertSuffix,
     candidate.retriggerSuggest
   );
+  item.insertText = insertion.snippet
+    ? new vscode.SnippetString(insertion.text)
+    : insertion.text;
   if (candidate.retriggerSuggest) {
-    item.command = createTriggerSuggestCommand();
+    item.command = createTriggerSuggestCommand(context.documentUri);
   }
   return item;
 }
@@ -99,19 +149,10 @@ function completionItemKind(candidate: ResourceCompletionCandidate): vscode.Comp
   }
 }
 
-function createTriggerSuggestCommand(): vscode.Command {
-  return { command: triggerResourceCompletionCommand, title: vscode.l10n.t("Suggest") };
-}
-
-function buildCompletionInsertText(value: string, includeQuotes: boolean, keepCursorInsideQuotes: boolean): string | vscode.SnippetString {
-  if (!includeQuotes) {
-    return value;
-  }
-
-  const escapedValue = escapeSnippet(value);
-  return new vscode.SnippetString(keepCursorInsideQuotes ? `"${escapedValue}$0"` : `"${escapedValue}"$0`);
-}
-
-function escapeSnippet(value: string): string {
-  return value.replace(/[\\$}]/g, "\\$&");
+function createTriggerSuggestCommand(documentUri: string): vscode.Command {
+  return {
+    command: triggerResourceCompletionCommand,
+    title: vscode.l10n.t("Suggest"),
+    arguments: [documentUri]
+  };
 }

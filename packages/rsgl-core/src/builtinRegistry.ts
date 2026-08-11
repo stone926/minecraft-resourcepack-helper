@@ -386,7 +386,7 @@ export const jsonResourceFragmentBuiltinDescriptors = [
     handler: "particlesSeq",
     completion: {
       label: "particlesSeq",
-      insertText: "particlesSeq(\"${1:minecraft:particle/explosion_{0..2}}\", pad: ${2:0})",
+      insertText: "particlesSeq(\"${1:minecraft:particle/explosion_{0..2\\}}\", pad: ${2:0})",
       detail: "Particle texture sequence helper"
     }
   },

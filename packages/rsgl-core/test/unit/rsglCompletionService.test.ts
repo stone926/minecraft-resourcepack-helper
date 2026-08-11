@@ -13,6 +13,14 @@ function symbol(name: string, kind: RsglSymbol["kind"], typeKind: RsglSymbol["ty
   };
 }
 
+function zeroWidthEdit(newText: string) {
+  return {
+    insert: { start: 0, end: 0 },
+    replace: { start: 0, end: 0 },
+    newText
+  };
+}
+
 describe("RSGL completion service", () => {
   it("merges syntax candidates with workspace semantic symbols", () => {
     const items = getRsglCompletionItems("", 0, [
@@ -26,22 +34,26 @@ describe("RSGL completion service", () => {
     assert.deepStrictEqual(items.find(item => item.label === "makeCube"), {
       label: "makeCube",
       kind: "function",
-      detail: "template: makeCube(): Unknown"
+      detail: "template: makeCube(): Unknown",
+      edit: zeroWidthEdit("makeCube")
     });
     assert.deepStrictEqual(items.find(item => item.label === "palette"), {
       label: "palette",
       kind: "struct",
-      detail: "table: {}"
+      detail: "table: {}",
+      edit: zeroWidthEdit("palette")
     });
     assert.deepStrictEqual(items.find(item => item.label === "stoneModel"), {
       label: "stoneModel",
       kind: "file",
-      detail: "resource: ModelId"
+      detail: "resource: ModelId",
+      edit: zeroWidthEdit("stoneModel")
     });
     assert.deepStrictEqual(items.find(item => item.label === "texture"), {
       label: "texture",
       kind: "variable",
-      detail: "variable: TextureId"
+      detail: "variable: TextureId",
+      edit: zeroWidthEdit("texture")
     });
   });
 
@@ -69,7 +81,8 @@ describe("RSGL completion service", () => {
     assert.deepStrictEqual(item, {
       label: "states",
       kind: "function",
-      detail: "import: states(): Json — template -> variants"
+      detail: "import: states(): Json — template -> variants",
+      edit: zeroWidthEdit("states")
     });
   });
 

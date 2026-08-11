@@ -63,6 +63,60 @@ describe("CIT completion and hover", () => {
     assert.deepStrictEqual(enchantmentResult?.candidates.map(candidate => candidate.label), ["minecraft:sharpness"]);
   });
 
+  it("replaces complete key tokens without duplicating an existing separator", () => {
+    const marked = createMarkedDocument("ty|pe=item");
+    const result = getCitCompletionResult(marked.document, marked.position, "en");
+    const candidate = result?.candidates.find(item => item.label === "type");
+
+    assert.strictEqual(candidate?.insertText, "type");
+    assert.strictEqual(candidate?.triggerSuggest, false);
+    assert.deepStrictEqual(result?.insertingRange, {
+      start: { line: 0, character: 0 },
+      end: { line: 0, character: 2 }
+    });
+    assert.deepStrictEqual(result?.replacingRange, {
+      start: { line: 0, character: 0 },
+      end: { line: 0, character: 4 }
+    });
+    assert.strictEqual(applyCompletion("type=item", result!.replacingRange, candidate!.insertText), "type=item");
+  });
+
+  it("replaces key suffixes and retriggers value completion when adding a separator", () => {
+    const marked = createMarkedDocument("t|ype");
+    const result = getCitCompletionResult(marked.document, marked.position, "en");
+    const candidate = result?.candidates.find(item => item.label === "type");
+
+    assert.strictEqual(candidate?.insertText, "type=");
+    assert.strictEqual(candidate?.triggerSuggest, true);
+    assert.strictEqual(applyCompletion("type", result!.replacingRange, candidate!.insertText), "type=");
+  });
+
+  it("replaces the value suffix instead of duplicating it", () => {
+    const marked = createMarkedDocument("type=e|lytra");
+    const result = getCitCompletionResult(marked.document, marked.position, "en");
+    const candidate = result?.candidates.find(item => item.label === "elytra");
+
+    assert.deepStrictEqual(result?.replacingRange, {
+      start: { line: 0, character: 5 },
+      end: { line: 0, character: 11 }
+    });
+    assert.strictEqual(
+      applyCompletion("type=elytra", result!.replacingRange, candidate!.insertText),
+      "type=elytra"
+    );
+  });
+
+  it("preserves a properties continuation marker after the completed value", () => {
+    const marked = createMarkedDocument("type=e|lytra\\");
+    const result = getCitCompletionResult(marked.document, marked.position, "en");
+    const candidate = result?.candidates.find(item => item.label === "elytra");
+
+    assert.strictEqual(
+      applyCompletion("type=elytra\\", result!.replacingRange, candidate!.insertText),
+      "type=elytra\\"
+    );
+  });
+
   it("returns hover content from the spec", () => {
     const { document, position } = createMarkedDocument("hand|=main");
 
@@ -107,4 +161,13 @@ function positionAt(text: string, offset: number): { line: number; character: nu
     line: lines.length - 1,
     character: lines[lines.length - 1].length
   };
+}
+
+function applyCompletion(text: string, range: {
+  start: { line: number; character: number };
+  end: { line: number; character: number };
+}, insertText: string): string {
+  assert.strictEqual(range.start.line, 0);
+  assert.strictEqual(range.end.line, 0);
+  return `${text.slice(0, range.start.character)}${insertText}${text.slice(range.end.character)}`;
 }

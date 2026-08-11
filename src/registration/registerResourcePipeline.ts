@@ -5,6 +5,7 @@ import { workspaceResourcePathResolutionHost } from "../services/resourcePathRes
 import { registerDefaultModelTextureResolutionHost } from "../utils/modelTexture";
 import { registerDefaultResourcePathResolutionHost } from "../utils/pathGenerator";
 import { registerDefaultResourceReferenceHost } from "../utils/resourceReferences";
+import { registerRelativeResourcePathResolver } from "../utils/resourceReferences/relativePathResolver";
 import type { RegistrationScope } from "./registrationScope";
 
 /** Installs the default adapters and feature-owned resource extensions. */
@@ -14,6 +15,7 @@ export function registerResourcePipeline(scope: RegistrationScope): void {
     registerDefaultResourcePathResolutionHost(workspaceResourcePathResolutionHost),
     registerDefaultModelTextureResolutionHost(workspaceResourceCache),
     registerCitResourceReferenceExtractor(),
-    registerCitResourcePathResolver()
+    registerCitResourcePathResolver(),
+    registerRelativeResourcePathResolver()
   );
 }

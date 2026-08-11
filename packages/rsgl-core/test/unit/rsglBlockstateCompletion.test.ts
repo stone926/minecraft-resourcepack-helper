@@ -167,7 +167,7 @@ describe("RSGL blockstate completion", () => {
     const apply = multipart.find(candidate => candidate.label === "part always")?.insertText ?? "";
     const random = multipart.find(candidate => candidate.label === "random")?.insertText ?? "";
     assert.match(stateRecord, /^part when \{.*\} =>/);
-    assert.match(predicate, /^part when \$state\./);
+    assert.match(predicate, /^part when \\\$state\./);
     assert.match(apply, /^part always => .*minecraft:block\/stone/);
     assert.doesNotMatch(apply, /@|\{\s*model\s*:/);
     assert.match(random, /^part always => random \{/);

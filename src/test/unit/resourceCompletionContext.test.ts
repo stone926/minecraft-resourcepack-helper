@@ -24,8 +24,10 @@ describe("resource completion context", () => {
     assert.strictEqual(context.reference.target, "textures");
     assert.strictEqual(context.reference.source, "models/block");
     assert.strictEqual(context.reference.extension, "png");
-    assert.strictEqual(context.includeQuotes, true);
-    assert.deepStrictEqual(context.replacementRange, { start: position, end: position });
+    assert.strictEqual(context.insertPrefix, "\"");
+    assert.strictEqual(context.insertSuffix, "\"");
+    assert.deepStrictEqual(context.insertingRange, { start: position, end: position });
+    assert.deepStrictEqual(context.replacingRange, { start: position, end: position });
   });
 
   it("infers model texture references for unclosed strings", () => {
@@ -45,11 +47,13 @@ describe("resource completion context", () => {
 
     assert.strictEqual(context?.reference.kind, "texture");
     assert.strictEqual(context.reference.value, "minecraft:block/qu");
-    assert.strictEqual(context.includeQuotes, false);
-    assert.deepStrictEqual(context.replacementRange, {
+    assert.strictEqual(context.insertPrefix, "");
+    assert.strictEqual(context.insertSuffix, "\"");
+    assert.deepStrictEqual(context.insertingRange, {
       start: { line: 3, character: 13 },
       end: position
     });
+    assert.deepStrictEqual(context.replacingRange, context.insertingRange);
   });
 
   it("infers parent model references for missing values", () => {
@@ -69,7 +73,8 @@ describe("resource completion context", () => {
     assert.strictEqual(context.reference.target, "models");
     assert.strictEqual(context.reference.source, "models/item");
     assert.strictEqual(context.reference.extension, "json");
-    assert.strictEqual(context.includeQuotes, true);
+    assert.strictEqual(context.insertPrefix, "\"");
+    assert.strictEqual(context.insertSuffix, "\"");
   });
 
   it("uses the CIT model file location as the completion source", () => {
@@ -116,9 +121,75 @@ describe("resource completion context", () => {
 
     assert.strictEqual(inferIncompleteResourceCompletionContext(document, position), null);
   });
+
+  it("keeps completion available when another JSON value is temporarily missing", () => {
+    const { document, position } = createMarkedJsonDocument(
+      path.join("pack", "assets", "minecraft", "models", "block", "slab.json"),
+      [
+        "{",
+        "  \"textures\": {",
+        "    \"side\": \"minecraft:block/qu|artz\",",
+        "    \"top\":",
+        "  },",
+        "}"
+      ].join("\n")
+    );
+
+    const context = inferIncompleteResourceCompletionContext(document, position);
+
+    assert.strictEqual(context?.reference.kind, "texture");
+    assert.strictEqual(context.reference.value, "minecraft:block/qu");
+    assert.deepStrictEqual(context.insertingRange.end, position);
+    assert.deepStrictEqual(context.replacingRange.end, { line: 2, character: 35 });
+    assert.strictEqual(context.insertSuffix, "");
+  });
+
+  it("infers empty and partial angle shader imports before a closing delimiter exists", () => {
+    const empty = createMarkedDocument(
+      path.join("pack", "assets", "minecraft", "shaders", "core", "entity.vsh"),
+      "#moj_import <|",
+      "glsl"
+    );
+    const partial = createMarkedDocument(
+      path.join("pack", "assets", "minecraft", "shaders", "include", "fog.glsl"),
+      "#moj_import <custom:lighting/|",
+      "glsl"
+    );
+
+    const emptyContext = inferIncompleteResourceCompletionContext(empty.document, empty.position);
+    const partialContext = inferIncompleteResourceCompletionContext(partial.document, partial.position);
+
+    assert.strictEqual(emptyContext?.reference.value, "");
+    assert.strictEqual(emptyContext?.reference.target, "shaders/include");
+    assert.strictEqual(emptyContext?.insertSuffix, ">");
+    assert.strictEqual(partialContext?.reference.value, "custom:lighting/");
+    assert.strictEqual(partialContext?.reference.source, "shaders/include");
+  });
+
+  it("infers quoted shader imports relative to the current shader directory", () => {
+    const { document, position } = createMarkedDocument(
+      path.join("pack", "assets", "minecraft", "shaders", "post", "nested", "blur.fsh"),
+      "#moj_import \"../shared/|",
+      "glsl"
+    );
+
+    const context = inferIncompleteResourceCompletionContext(document, position);
+
+    assert.strictEqual(context?.reference.target, "shaders/post/nested");
+    assert.strictEqual(context?.reference.source, "shaders/post/nested");
+    assert.strictEqual(context?.reference.resolveMode, "relative");
+    assert.strictEqual(context?.insertSuffix, "\"");
+  });
 });
 
 function createMarkedJsonDocument(fileName: string, markedText: string): {
+  document: ResourceReferenceDocument;
+  position: { line: number; character: number };
+} {
+  return createMarkedDocument(fileName, markedText, "json");
+}
+
+function createMarkedDocument(fileName: string, markedText: string, languageId: string): {
   document: ResourceReferenceDocument;
   position: { line: number; character: number };
 } {
@@ -128,7 +199,7 @@ function createMarkedJsonDocument(fileName: string, markedText: string): {
 
   return {
     document: {
-      languageId: "json",
+      languageId,
       fileName,
       getText: () => text
     },

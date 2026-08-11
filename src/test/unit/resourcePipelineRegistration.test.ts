@@ -18,6 +18,7 @@ import {
   type ResourceReferenceHost
 } from "../../utils/resourceReferences";
 import { parseJsonAst } from "../../utils/jsonAst";
+import { registerRelativeResourcePathResolver } from "../../utils/resourceReferences/relativePathResolver";
 
 describe("resource pipeline registration", () => {
   it("keeps unregistered headless extraction pure and uncached", () => {
@@ -82,6 +83,50 @@ describe("resource pipeline registration", () => {
       registration.dispose();
     }
     assert.strictEqual(resolver(citReference, document), null);
+  });
+
+  it("resolves relative shader imports without escaping the assets namespace", () => {
+    const document = {
+      fileName: path.resolve(
+        "pack",
+        "assets",
+        "custom",
+        "shaders",
+        "post",
+        "nested",
+        "blur.fsh"
+      )
+    };
+    const expected = path.resolve(
+      "pack",
+      "assets",
+      "custom",
+      "shaders",
+      "post",
+      "shared",
+      "common.glsl"
+    );
+    const host: ResourcePathResolutionHost = {
+      resolveResourcePath: () => null,
+      getPathExists: fileName => fileName === expected,
+      getPackRoot: () => null,
+      getResourceConfiguration: () => ({}),
+      createFileUri: fileName => ({ fsPath: fileName } as never)
+    };
+    const resolver = createResourceReferencePathResolver(host);
+    const registration = registerRelativeResourcePathResolver();
+    try {
+      assert.strictEqual(
+        resolver({ ...reference("../shared/common.glsl"), resolveMode: "relative" }, document)?.fsPath,
+        expected
+      );
+      assert.strictEqual(
+        resolver({ ...reference("../../../../../pack.mcmeta"), resolveMode: "relative" }, document),
+        null
+      );
+    } finally {
+      registration.dispose();
+    }
   });
 
   it("resolves model texture variables through a scoped default host", () => {

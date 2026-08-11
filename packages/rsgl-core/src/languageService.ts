@@ -5,6 +5,7 @@ import {
   type RsglCompletionNamespace
 } from "./completionService";
 import { getRsglCompletionContext } from "./completionContext";
+import { withRsglCompletionEdits } from "./completionEdit";
 import { visibleRsglSymbolsAtOffset } from "./completionScope";
 import {
   callablePresentation,
@@ -93,13 +94,15 @@ export function getRsglDocumentCompletionItems(
     effectiveTarget,
     context.model.module
   );
+  const attachEdits = (items: readonly RsglCompletionItem[]): RsglCompletionItem[] =>
+    withRsglCompletionEdits(items, text, offset, context.model.module.tokens);
   const itemSchemaOwnsCompletion = Boolean(completionContext.itemModel?.schema)
     || isItemModelCompletionKeyPosition(completionContext.itemModel);
   const members = itemSchemaOwnsCompletion
     ? undefined
     : getRsglMemberCompletionInfo(context.program, document.fileName, text, offset);
   if (members) {
-    return members.map(member => {
+    return attachEdits(members.map(member => {
       if (!member.category || !member.symbol) {
         return {
           label: member.name,
@@ -115,14 +118,14 @@ export function getRsglDocumentCompletionItems(
           ? `${member.category}: ${callable.detail ? `${callable.label} — ${callable.detail}` : callable.label}`
           : `${member.category}: ${formatType(member.type)}`
       };
-    });
+    }));
   }
-  return getRsglCompletionItemsForContext(
+  return attachEdits(getRsglCompletionItemsForContext(
     completionContext,
     visibleRsglSymbolsAtOffset(context.model, offset),
     context.model.scope.typeAliases,
     completionNamespaceAt(context.model, offset)
-  );
+  ));
 }
 
 export function getRsglDocumentSemanticTokens(

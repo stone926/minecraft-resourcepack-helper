@@ -145,6 +145,13 @@ describe("resource surface registry", () => {
     assert.ok(watcherPatterns.includes("**/assets/*/sounds/**/*.ogg"));
     assert.ok(watcherPatterns.includes("**/assets/*/font/**/*"));
     assert.ok(watcherPatterns.includes("**/rsgl.config.json"));
+    assert.ok(watcherPatterns.includes("**/assets/*/shaders/include/**/*.glsl"));
+    assert.strictEqual(
+      getResourceSurfaceDocumentKind(
+        path.join("pack", "assets", "minecraft", "shaders", "include", "lighting", "fog.glsl")
+      ),
+      "shaderInclude"
+    );
     assert.ok(watcherGlob);
     assert.ok(watcherGlob.startsWith("{") && watcherGlob.endsWith("}"));
     for (const pattern of watcherPatterns) {

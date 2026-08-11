@@ -80,7 +80,7 @@ export function getResourceReferences(
   if (extraction.mode === "shader") {
     const references = filterResourceReferencesForSurface(
       documentKind,
-      getShaderReferences(document.getText(), extraction.source)
+      getShaderReferences(document.getText(), extraction.source, document.fileName)
     );
     setCachedResourceReferences(resolvedHost, cacheDescriptor, references);
     return references;

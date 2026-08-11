@@ -17,6 +17,7 @@ import {
   type PartialResourcePath
 } from "../utils/resourceCompletionPaths";
 import type { ResourceReference } from "../utils/resourceReferences";
+import { resolveRelativeResourcePathWithinNamespace } from "../utils/resourceReferences/relativeResourcePath";
 
 export type ResourceCompletionCandidateKind = "namespace" | "directory" | "file";
 
@@ -90,16 +91,28 @@ export class ResourceCompletionService {
       request.reference,
       partialPath
     );
-    const roots = this.getResourceRoots(request, lookupNamespace, request.reference.value, false);
+    if (
+      request.reference.resolveMode === "relative"
+      && !resolveRelativeResourcePathWithinNamespace(
+        request.documentFileName,
+        request.reference.value,
+        true
+      )
+    ) {
+      return [];
+    }
+
+    const roots = request.reference.resolveMode === "relative"
+      ? [path.dirname(request.documentFileName)]
+      : [...this.getResourceRoots(request, lookupNamespace, request.reference.value, false)];
     if (request.reference.resolveMode === "cit" && shouldCompleteCitLocalPath(request.reference.value)) {
       roots.unshift(path.dirname(request.documentFileName));
     }
 
-    const physicalCandidates = await this.collectCompletionCandidates(roots, partialPath, request);
-    const generatedCandidates = await this.collectGeneratedCompletionCandidates(
-      partialPath,
-      request.reference
-    );
+    const [physicalCandidates, generatedCandidates] = await Promise.all([
+      this.collectCompletionCandidates(roots, partialPath, request),
+      this.collectGeneratedCompletionCandidates(partialPath, request.reference)
+    ]);
     return uniqueCompletionCandidates([...physicalCandidates, ...generatedCandidates]);
   }
 
@@ -112,7 +125,7 @@ export class ResourceCompletionService {
     partialPath: PartialResourcePath,
     reference: ResourceReference
   ): Promise<ResourceCompletionCandidate[]> {
-    if (!this.inventory) {
+    if (!this.inventory || reference.resolveMode === "relative") {
       return [];
     }
 
@@ -143,11 +156,14 @@ export class ResourceCompletionService {
         if (!fileName.startsWith(partialPath.prefix)) {
           return [];
         }
+        const value = partialPath.explicitNamespace || namespace !== "minecraft"
+          ? `${namespace}:${idPath}`
+          : idPath;
         return [{
           label: fileName,
           kind: "file" as const,
-          value: `${namespace}:${idPath}`,
-          filterText: idPath,
+          value,
+          filterText: value,
           retriggerSuggest: false
         }];
       });
@@ -187,9 +203,14 @@ export class ResourceCompletionService {
 
     await this.collectNamespaceCompletionCandidates(candidatesByValue, roots, partialPath, request.reference);
 
-    for (const root of roots) {
-      const directoryPath = path.join(root, ...splitResourcePath(partialPath.directory));
-      const entries = await this.host.getDirectoryEntries(directoryPath);
+    const entriesByRoot = await Promise.all(roots.map(async root => ({
+      root,
+      entries: await this.host.getDirectoryEntries(
+        path.join(root, ...splitResourcePath(partialPath.directory))
+      )
+    })));
+
+    for (const { root, entries } of entriesByRoot) {
       if (!entries) {
         continue;
       }
@@ -232,7 +253,7 @@ export class ResourceCompletionService {
     partialPath: PartialResourcePath,
     reference: ResourceReference
   ): Promise<void> {
-    if (!shouldCompleteNamespaces(partialPath)) {
+    if (reference.resolveMode === "relative" || !shouldCompleteNamespaces(partialPath)) {
       return;
     }
 
@@ -270,7 +291,7 @@ export class ResourceCompletionService {
     request: ResourceCompletionRequest
   ): boolean {
     if (
-      request.reference.resolveMode === "cit" &&
+      (request.reference.resolveMode === "cit" || request.reference.resolveMode === "relative") &&
       isSamePath(root, path.dirname(request.documentFileName))
     ) {
       return true;
@@ -278,7 +299,7 @@ export class ResourceCompletionService {
 
     const completionResource = getResourcePathForCompletionValue(request.reference, value, isDirectory);
     if (!completionResource) {
-      return true;
+      return false;
     }
 
     const allowedRoots = this.getResourceRoots(
@@ -348,6 +369,10 @@ function isCompletableEntry(
   entry: ResourceCompletionDirectoryEntry,
   reference: ResourceReference
 ): boolean {
+  if (reference.resolveMode === "relative" && /["\r\n]/.test(entry.name)) {
+    return false;
+  }
+
   if (reference.kind === "fontFile") {
     return entry.isDirectory() || entry.isFile();
   }
@@ -368,7 +393,11 @@ function uniqueCompletionCandidates(
 ): ResourceCompletionCandidate[] {
   const unique = new Map<string, ResourceCompletionCandidate>();
   for (const candidate of candidates) {
-    const key = `${candidate.kind}\0${candidate.value}`;
+    const parsed = parseResourceLocation(candidate.value.replace(/[\\/]+$/g, ""), null);
+    const canonicalValue = parsed.isValid
+      ? `${parsed.namespace}:${parsed.resourcePath.replaceAll(path.sep, "/")}`
+      : candidate.value;
+    const key = `${candidate.kind}\0${canonicalValue}`;
     if (!unique.has(key)) {
       unique.set(key, candidate);
     }

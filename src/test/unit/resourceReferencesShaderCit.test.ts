@@ -76,7 +76,7 @@ describe("shader and CIT resource references", () => {
       [
         ["shader", "light.glsl", "shaders/include", "shaders/core", null],
         ["shader", "custom:lighting/fog.vsh", "shaders/include", "shaders/core", null],
-        ["shader", "custom:shared/fog.glsl", "shaders/include", "shaders/core", null],
+        ["shader", "custom:shared/fog.glsl", "shaders/core", "shaders/core", null],
         ["shader", "screenquad.glsl", "shaders/core", "shaders/core", null],
         ["shader", "post_effect/common.fsh", "shaders/include", "shaders/post", null]
       ]
@@ -138,6 +138,67 @@ describe("shader and CIT resource references", () => {
         ["texture", "./textures/alias", "textures"],
         ["texture", "./textures/namespaced", "textures"],
         ["model", "custom:item/bow", "models"]
+      ]
+    );
+  });
+
+  it("finds shader imports at the end of their value", () => {
+    const { document, position } = createMarkedTextDocument(
+      path.join("pack", "assets", "minecraft", "shaders", "core", "entity.vsh"),
+      "#moj_import <minecraft:lighting/fog|>",
+      "glsl",
+      1
+    );
+
+    const reference = findResourceReferenceAtPosition(document, position);
+
+    assert.strictEqual(reference?.value, "minecraft:lighting/fog");
+    assert.strictEqual(reference?.target, "shaders/include");
+  });
+
+  it("keeps empty closed shader imports findable without synthesizing another delimiter", () => {
+    const angle = createMarkedTextDocument(
+      path.join("pack", "assets", "minecraft", "shaders", "core", "empty.vsh"),
+      "#moj_import <|>",
+      "glsl",
+      1
+    );
+    const quoted = createMarkedTextDocument(
+      path.join("pack", "assets", "minecraft", "shaders", "core", "empty.fsh"),
+      "#moj_import \"|\"",
+      "glsl",
+      1
+    );
+
+    assert.strictEqual(findResourceReferenceAtPosition(angle.document, angle.position)?.value, "");
+    assert.strictEqual(findResourceReferenceAtPosition(quoted.document, quoted.position)?.value, "");
+  });
+
+  it("resolves quoted imports relative to nested post and include sources", () => {
+    const postDocument = createTextDocument(
+      path.join("pack", "assets", "custom", "shaders", "post", "nested", "blur.fsh"),
+      "#moj_import \"../shared/common.glsl\""
+    );
+    const includeDocument = createTextDocument(
+      path.join("pack", "assets", "custom", "shaders", "include", "lighting", "fog.glsl"),
+      "#moj_import \"../math.glsl\""
+    );
+
+    const references = [
+      ...getResourceReferences(postDocument),
+      ...getResourceReferences(includeDocument)
+    ];
+
+    assert.deepStrictEqual(
+      references.map(reference => [
+        reference.value,
+        reference.target,
+        reference.source,
+        reference.resolveMode ?? null
+      ]),
+      [
+        ["../shared/common.glsl", "shaders/post/nested", "shaders/post/nested", "relative"],
+        ["../math.glsl", "shaders/include/lighting", "shaders/include/lighting", "relative"]
       ]
     );
   });

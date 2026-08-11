@@ -16,8 +16,9 @@ const citCompletionProvider: vscode.CompletionItemProvider = {
       return null;
     }
 
-    const range = toVscodeRange(result.range);
-    return result.candidates.map(candidate => toCompletionItem(candidate, range));
+    const insertingRange = toVscodeRange(result.insertingRange);
+    const replacingRange = toVscodeRange(result.replacingRange);
+    return result.candidates.map(candidate => toCompletionItem(candidate, insertingRange, replacingRange));
   }
 };
 
@@ -44,9 +45,13 @@ function getCompletionResourceIds(document: vscode.TextDocument): CitResourceCom
   );
 }
 
-function toCompletionItem(candidate: CitCompletionCandidate, range: vscode.Range): vscode.CompletionItem {
+function toCompletionItem(
+  candidate: CitCompletionCandidate,
+  insertingRange: vscode.Range,
+  replacingRange: vscode.Range
+): vscode.CompletionItem {
   const item = new vscode.CompletionItem(candidate.label, toCompletionItemKind(candidate));
-  item.range = range;
+  item.range = { inserting: insertingRange, replacing: replacingRange };
   item.insertText = candidate.insertText;
   item.detail = candidate.detail;
   item.documentation = candidate.documentation ? new vscode.MarkdownString(candidate.documentation) : undefined;

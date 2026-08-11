@@ -18,6 +18,10 @@ const fallbackWorkspace = {
   }
 };
 
+function completionSummary(items: ReturnType<typeof getRsglDocumentCompletionItems>) {
+  return items.map(item => ({ label: item.label, kind: item.kind, detail: item.detail }));
+}
+
 describe("RSGL member language service", () => {
   it("uses the touched lexical receiver and exposes only safe union fields", () => {
     const text = [
@@ -34,7 +38,7 @@ describe("RSGL member language service", () => {
 
     const entryMemberOffset = text.indexOf("entry.name") + "entry.".length;
     const entryItems = getRsglDocumentCompletionItems(document, entryMemberOffset, fallbackWorkspace);
-    assert.deepStrictEqual(entryItems, [
+    assert.deepStrictEqual(completionSummary(entryItems), [
       { label: "name", kind: "property", detail: "property: String" },
       { label: "top", kind: "property", detail: "optional property: TextureId" },
       { label: "nested", kind: "property", detail: "property: { title: String }" }
@@ -43,13 +47,13 @@ describe("RSGL member language service", () => {
 
     const nestedOffset = text.indexOf("nested.title") + "nested.".length;
     assert.deepStrictEqual(
-      getRsglDocumentCompletionItems(document, nestedOffset, fallbackWorkspace),
+      completionSummary(getRsglDocumentCompletionItems(document, nestedOffset, fallbackWorkspace)),
       [{ label: "title", kind: "property", detail: "property: String" }]
     );
 
     const unionOffset = text.lastIndexOf("e.common") + "e.".length;
     assert.deepStrictEqual(
-      getRsglDocumentCompletionItems(document, unionOffset, fallbackWorkspace),
+      completionSummary(getRsglDocumentCompletionItems(document, unionOffset, fallbackWorkspace)),
       [
         { label: "common", kind: "property", detail: "property: String" },
         { label: "maybe", kind: "property", detail: "optional property: TextureId" }
@@ -70,7 +74,7 @@ describe("RSGL member language service", () => {
       incompleteText.length,
       fallbackWorkspace
     );
-    assert.deepStrictEqual(incompleteItems, [
+    assert.deepStrictEqual(completionSummary(incompleteItems), [
       { label: "name", kind: "property", detail: "property: String" },
       { label: "top", kind: "property", detail: "optional property: TextureId" }
     ]);
@@ -262,7 +266,9 @@ describe("RSGL member language service", () => {
       const document = { fileName: mainFile, getText: () => mainText };
       const memberStart = mainText.lastIndexOf("name");
       const completionOffset = mainText.lastIndexOf("entry.name") + "entry.".length;
-      assert.deepStrictEqual(getRsglDocumentCompletionItems(document, completionOffset, workspace), [
+      assert.deepStrictEqual(completionSummary(
+        getRsglDocumentCompletionItems(document, completionOffset, workspace)
+      ), [
         { label: "name", kind: "property", detail: "property: String" },
         { label: "top", kind: "property", detail: "optional property: TextureId" }
       ]);
@@ -358,20 +364,20 @@ describe("RSGL member language service", () => {
     const valueOffset = text.lastIndexOf("Entry") + 2;
 
     assert.deepStrictEqual(
-      getRsglDocumentCompletionItems(document, annotationOffset, fallbackWorkspace)
-        .filter(item => item.label === "Entry"),
+      completionSummary(getRsglDocumentCompletionItems(document, annotationOffset, fallbackWorkspace)
+        .filter(item => item.label === "Entry")),
       [{ label: "Entry", kind: "struct", detail: "type alias: { name: String }" }]
     );
     assert.deepStrictEqual(
-      getRsglDocumentCompletionItems(document, valueOffset, fallbackWorkspace)
-        .filter(item => item.label === "Entry"),
+      completionSummary(getRsglDocumentCompletionItems(document, valueOffset, fallbackWorkspace)
+        .filter(item => item.label === "Entry")),
       [{ label: "Entry", kind: "variable", detail: "variable: 42" }]
     );
 
     const model = semanticModelForRsglDocument(document, fallbackWorkspace);
     assert.deepStrictEqual(
-      getRsglCompletionItems("", 0, model.symbols, model.scope.typeAliases, "both")
-        .filter(item => item.label === "Entry"),
+      completionSummary(getRsglCompletionItems("", 0, model.symbols, model.scope.typeAliases, "both")
+        .filter(item => item.label === "Entry")),
       [
         { label: "Entry", kind: "variable", detail: "variable: 42" },
         { label: "Entry", kind: "struct", detail: "type alias: { name: String }" }
