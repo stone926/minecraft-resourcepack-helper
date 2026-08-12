@@ -41,6 +41,7 @@ export class ResourceUniverseNavigationFacade implements ResourceUniverseNavigat
   private readonly referenceQueries: ResourceReferenceQueryService;
   private readonly inventory: ResourceSearchInventoryService;
   private readonly invalidator: ResourceProjectUniverseInvalidator;
+  private physicalDefinitionResolver?: PhysicalAssetDefinitionResolver;
 
   public constructor(
     projects: ResourcePackProjectService,
@@ -72,6 +73,7 @@ export class ResourceUniverseNavigationFacade implements ResourceUniverseNavigat
   }
 
   public setPhysicalDefinitionResolver(resolver: PhysicalAssetDefinitionResolver): void {
+    this.physicalDefinitionResolver = resolver;
     this.definitionQueries.setPhysicalDefinitionResolver(resolver);
     this.referenceQueries.setPhysicalDefinitionResolver(resolver);
   }
@@ -184,10 +186,13 @@ export class ResourceUniverseNavigationFacade implements ResourceUniverseNavigat
   }
 
   public invalidateUri(uri: vscode.Uri): readonly string[] {
-    return this.invalidator.invalidatePhysicalUri(uri.toString());
+    const projectIds = this.invalidator.invalidatePhysicalUri(uri.toString());
+    this.physicalDefinitionResolver?.invalidateProjects?.(projectIds);
+    return projectIds;
   }
 
   public invalidateAllKnownProjects(): void {
-    this.invalidator.invalidateAllKnownProjects();
+    const projectIds = this.invalidator.invalidateAllKnownProjects();
+    this.physicalDefinitionResolver?.invalidateProjects?.(projectIds);
   }
 }

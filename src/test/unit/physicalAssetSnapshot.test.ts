@@ -158,6 +158,7 @@ describe("physical asset provider snapshot", () => {
 
   it("adapts the existing JSON reference extractor without persisting resolved target URIs", () => {
     const text = JSON.stringify({ parent: "demo:block/base" });
+    let getTextCalls = 0;
     const facts = adaptPhysicalAssetDocuments([{
       uri: "vscode-remote://ssh-remote+dev/work/assets/demo/models/block/consumer.json",
       fileName: "/work/assets/demo/models/block/consumer.json",
@@ -167,10 +168,14 @@ describe("physical asset provider snapshot", () => {
       layerId: "local",
       layerRole: "local",
       outputPath: "assets/demo/models/block/consumer.json",
-      getText: () => text
+      getText: () => {
+        getTextCalls++;
+        return text;
+      }
     }]);
 
     assert.strictEqual(facts.length, 1);
+    assert.strictEqual(getTextCalls, 1, "document text should be shared by extraction and range mapping");
     assert.deepStrictEqual(facts[0].references.map(reference => ({
       kind: reference.targetKind,
       value: reference.value,

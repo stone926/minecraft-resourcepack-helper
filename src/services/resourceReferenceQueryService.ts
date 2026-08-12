@@ -5,10 +5,15 @@ import {
   uniqueLogicalKeys,
   type ResourceGraphLogicalKey
 } from "../../packages/mc-assets/src";
+import type { ResourcePackProjectContextDto } from "../../packages/resource-project/src";
 import type { ResourceProducer } from "../resourceUniverse/core/types";
 import type { ResourceUniverseService } from "../resourceUniverse/core/resourceUniverseService";
-import { physicalProviderId } from "../resourceUniverse/core/providerIds";
-import type { PhysicalAssetDefinitionResolver } from "../resourceUniverse/providers/physicalAssetDefinitionResolver";
+import { projectProviderCoverage } from "../resourceUniverse/core/providerCoverage";
+import { physicalProviderId, rsglGeneratedProviderId } from "../resourceUniverse/core/providerIds";
+import type {
+  PhysicalAssetDefinitionResolution,
+  PhysicalAssetDefinitionResolver
+} from "../resourceUniverse/providers/physicalAssetDefinitionResolver";
 import type {
   ResourceNavigationResult,
   ResourceNavigationService
@@ -87,7 +92,6 @@ export class ResourceReferenceQueryService {
     if (
       discovered.context
       && !currentIndexIsUsable
-      && !generatedFactsAreApplicable
       && this.physicalDefinitionResolver
     ) {
       try {
@@ -96,15 +100,18 @@ export class ResourceReferenceQueryService {
           target: identity.primaryKey,
           scope: "effective"
         }, options.signal);
-        if (exact.status === "resolved") {
-          return {
-            target: exact.target,
-            targetUri: vscode.Uri.parse(exact.definition.uri, true),
-            coverage: "authoritative"
-          };
-        }
-        if (exact.status === "missing") {
-          return { target: exact.target, targetUri: null, coverage: "authoritative" };
+        if (exact.status === "resolved" || exact.status === "missing") {
+          if (!generatedFactsAreApplicable) {
+            return exactPhysicalResolution(exact);
+          }
+          const hybrid = this.resolveWithCurrentGeneratedFacts(
+            document,
+            discovered.context,
+            exact
+          );
+          if (hybrid) {
+            return hybrid;
+          }
         }
       } catch (error) {
         if (isAbortError(error) || options.signal?.aborted) {
@@ -125,6 +132,82 @@ export class ResourceReferenceQueryService {
         ensured.rsglApplicability
       )
     );
+  }
+
+  /**
+   * Combines one authoritative physical probe with only the already-indexed
+   * generated facts for the same target. Equal-layer candidates deliberately
+   * fall back to the coupled refresh because ownership and conflict projection
+   * must remain atomic in that case.
+   */
+  private resolveWithCurrentGeneratedFacts(
+    document: ResourceUniverseDocument,
+    context: ResourcePackProjectContextDto,
+    exact: Extract<PhysicalAssetDefinitionResolution, { status: "resolved" | "missing" }>
+  ): UnifiedReferenceResolution | undefined {
+    const generatedCoverage = projectProviderCoverage(
+      this.universe.getCoverage(rsglGeneratedProviderId, context.projectId),
+      context.projectId,
+      "effective",
+      exact.target
+    );
+    if (generatedCoverage === "unavailable") {
+      return undefined;
+    }
+
+    const layerPriorities = effectiveLayerPriorities(context);
+    const generatedCandidates = generatedCoverage === "notApplicable"
+      ? []
+      : this.universe.getProducersForKey(exact.target).filter(producer =>
+          producer.projectId === context.projectId
+          && producer.providerId === rsglGeneratedProviderId
+        );
+    if (generatedCandidates.length === 0) {
+      return exactPhysicalResolution(exact);
+    }
+
+    const generatedPriorities = generatedCandidates.map(candidate =>
+      layerPriorities.get(candidate.layerId)
+    );
+    if (generatedPriorities.some(priority => priority === undefined)) {
+      // The generated snapshot belongs to an older layer topology.
+      return undefined;
+    }
+    const generatedPriority = Math.min(...generatedPriorities as number[]);
+    const physicalPriority = exact.status === "resolved"
+      ? layerPriorities.get(exact.definition.layer.layerId)
+      : undefined;
+    if (exact.status === "resolved" && physicalPriority === undefined) {
+      return undefined;
+    }
+    if (physicalPriority !== undefined && physicalPriority < generatedPriority) {
+      return exactPhysicalResolution(exact);
+    }
+    if (physicalPriority === generatedPriority) {
+      // Same-layer physical/generated producers may be a materialization or a
+      // genuine conflict. Only the coupled provider refresh can distinguish it.
+      return undefined;
+    }
+
+    const navigation = this.navigation.resolveDefinition(
+      exact.target,
+      createResourceResolutionContext(context, [rsglGeneratedProviderId]),
+      { activeUri: document.uri.toString() }
+    );
+    if (navigation.status === "incomplete") {
+      return undefined;
+    }
+    if (navigation.status === "missing") {
+      // The snapshot may have been atomically replaced between the candidate
+      // lookup and resolution; the exact physical evidence is still current.
+      return exactPhysicalResolution(exact);
+    }
+    return {
+      target: exact.target,
+      targetUri: resolvedLocationUri(navigation),
+      coverage: "authoritative",
+      navigation
+    };
   }
 
   public async getOutgoingReferences(
@@ -354,6 +437,28 @@ function resolvedProducer(result: ResourceNavigationResult | undefined): Resourc
 
 function resolvedLocationUri(result: ResourceNavigationResult): vscode.Uri | null {
   return result.status === "resolved" ? vscode.Uri.parse(result.primary.uri, true) : null;
+}
+
+function exactPhysicalResolution(
+  exact: Extract<PhysicalAssetDefinitionResolution, { status: "resolved" | "missing" }>
+): UnifiedReferenceResolution {
+  return {
+    target: exact.target,
+    targetUri: exact.status === "resolved"
+      ? vscode.Uri.parse(exact.definition.uri, true)
+      : null,
+    coverage: "authoritative"
+  };
+}
+
+function effectiveLayerPriorities(
+  context: ResourcePackProjectContextDto
+): ReadonlyMap<string, number> {
+  return new Map([
+    context.localLayer,
+    ...context.externalLayers,
+    ...(context.vanillaLayer ? [context.vanillaLayer] : [])
+  ].map((layer, index) => [layer.layerId, index]));
 }
 
 function preferredProducerUri(producer: ResourceProducer): vscode.Uri | null {

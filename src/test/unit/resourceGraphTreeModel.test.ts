@@ -35,6 +35,72 @@ describe("resource graph tree model", () => {
     assert.strictEqual("command" in blocks[0], false);
   });
 
+  it("memoizes successful and in-flight async children within one node snapshot", async () => {
+    const sourceUri = uri(path.join("pack", "assets", "minecraft", "blockstates", "stone.json"));
+    const document: ResourceGraphTreeDocument = {
+      uri: sourceUri,
+      fileName: sourceUri.fsPath,
+      languageId: "json",
+      version: 1,
+      getText: () => "{}"
+    };
+    let referenceRequests = 0;
+    let releaseReferences: (() => void) | undefined;
+    let notifyReferenceRequest: (() => void) | undefined;
+    const referenceRequested = new Promise<void>(resolve => {
+      notifyReferenceRequest = resolve;
+    });
+    const referencesReady = new Promise<void>(resolve => {
+      releaseReferences = resolve;
+    });
+    const model = new ResourceGraphTreeModel(fakeHost({
+      referencesLoader: async () => {
+        referenceRequests++;
+        notifyReferenceRequest?.();
+        await referencesReady;
+        return [];
+      }
+    }), localize);
+
+    const [current] = await model.getRoots(document);
+    const first = current.getChildren();
+    const concurrent = current.getChildren();
+    await referenceRequested;
+    assert.strictEqual(referenceRequests, 1);
+    releaseReferences?.();
+    assert.strictEqual(await concurrent, await first);
+    assert.strictEqual(await current.getChildren(), await first);
+    assert.strictEqual(referenceRequests, 1);
+  });
+
+  it("retries async children after a failed provider request", async () => {
+    const sourceUri = uri(path.join("pack", "assets", "minecraft", "blockstates", "stone.json"));
+    const document: ResourceGraphTreeDocument = {
+      uri: sourceUri,
+      fileName: sourceUri.fsPath,
+      languageId: "json",
+      version: 1,
+      getText: () => "{}"
+    };
+    let referenceRequests = 0;
+    const model = new ResourceGraphTreeModel(fakeHost({
+      referencesLoader: async () => {
+        referenceRequests++;
+        if (referenceRequests === 1) {
+          throw new Error("transient reference failure");
+        }
+        return [];
+      }
+    }), localize);
+
+    const [current] = await model.getRoots(document);
+    await assert.rejects(current.getChildren(), /transient reference failure/);
+    const children = await current.getChildren();
+
+    assert.strictEqual(referenceRequests, 2);
+    assert.strictEqual(children[0].label, "References");
+  });
+
   it("shows partial block coverage explicitly after deferred expansion", async () => {
     const blockstate = uri(path.join("pack", "assets", "minecraft", "blockstates", "stone.json"));
     const model = new ResourceGraphTreeModel(fakeHost({
@@ -270,6 +336,7 @@ function fakeHost(options: {
   onInventoryRequest?: () => void;
   onProjectionRequest?: () => void;
   references?: ResourceGraphTreeResolvedReference[];
+  referencesLoader?: () => Promise<ResourceGraphTreeResolvedReference[]>;
   incoming?: ResourceGraphTreeResolvedReference[];
   documents?: ResourceGraphTreeDocument[];
   projection?: ResourceGraphDocumentProjection;
@@ -293,7 +360,9 @@ function fakeHost(options: {
         uris: options.blockstates ?? []
       };
     },
-    getReferences: async () => options.references ?? [],
+    getReferences: async () => options.referencesLoader
+      ? options.referencesLoader()
+      : options.references ?? [],
     getIncomingReferences: async () => options.incoming ?? [],
     getChildModelReferences: async () => [],
     getProducerReferences: async () => options.references ?? [],

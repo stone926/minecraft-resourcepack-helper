@@ -88,12 +88,12 @@ describe("exact physical asset Definition resolver", () => {
       "file:///pack/overlay/assets/demo/textures/block/priority.png"
     );
     assert.deepStrictEqual(host.probes, [
-      result.definition.uri,
-      "file:///pack/assets/demo/textures/block/priority.png"
+      result.definition.uri
     ]);
+    assert.deepStrictEqual(host.rootRequests, ["local"]);
   });
 
-  it("falls back when active roots in one layer contain conflicting definitions", async () => {
+  it("returns the first matching root without probing shadowed roots", async () => {
     const context = projectContext();
     const host = new FakeDefinitionHost(context, {
       roots: new Map([
@@ -111,8 +111,14 @@ describe("exact physical asset Definition resolver", () => {
       scope: "local"
     }, host);
 
-    assert.strictEqual(result.status, "fallback");
-    assert.strictEqual(result.status === "fallback" && result.reason, "multipleCandidates");
+    assert.strictEqual(result.status, "resolved");
+    assert.strictEqual(
+      result.status === "resolved" && result.definition.uri,
+      "file:///pack/overlay/assets/demo/models/block/conflict.json"
+    );
+    assert.deepStrictEqual(host.probes, [
+      "file:///pack/overlay/assets/demo/models/block/conflict.json"
+    ]);
   });
 
   it("returns a certain miss only after every applicable exact candidate is missing", async () => {

@@ -15,6 +15,7 @@ import {
   type ResourcePackProjectContextDto,
   type SerializedResourceUri
 } from "../../../packages/resource-project/src";
+import { LruCache } from "../../../packages/shared-utils/src";
 import { mapWithConcurrency } from "../../utils/asyncWorkPool";
 import { throwIfAborted } from "../../utils/abortError";
 import { ignoredWorkspaceDirectoryNames } from "../../resources/resourceSurfaceRegistry";
@@ -52,6 +53,11 @@ const indexedExtensions = new Set([
   ".woff2"
 ]);
 const ignoredDirectories = ignoredWorkspaceDirectoryNames;
+const maximumCachedLayerPlans = 256;
+const maximumCachedExactDefinitions = 4_096;
+// Recursive workspace watchers are not authoritative for configured packs outside
+// the workspace. Keep a short verification window even when the context is stable.
+const layerPlanVerificationWindowMs = 1_000;
 
 interface ScannableLayer {
   descriptor: ResourceLayerDescriptor;
@@ -67,6 +73,18 @@ type LayerAssetsRootDiscovery =
     }
   | { status: "unsupported" | "unavailable" };
 
+interface CachedLayerAssetsRootDiscovery {
+  readonly projectId: string;
+  readonly expiresAt: number;
+  readonly value: Extract<LayerAssetsRootDiscovery, { status: "ready" }>;
+}
+
+interface CachedExactDefinition {
+  readonly projectId: string;
+  readonly expiresAt: number;
+  readonly value: Extract<PhysicalAssetDefinitionResolution, { status: "resolved" | "missing" }>;
+}
+
 export interface PhysicalAssetProjectContextStore {
   getCachedContext(projectId: string): ResourcePackProjectContextDto | undefined;
 }
@@ -77,6 +95,14 @@ export class VscodePhysicalAssetSource implements
   PhysicalAssetDefinitionResolver,
   PhysicalAssetDefinitionResolverHost {
   private ownedOutputLookup?: PhysicalAssetOwnedOutputLookup;
+  private readonly layerPlanCache = new LruCache<string, CachedLayerAssetsRootDiscovery>(
+    maximumCachedLayerPlans
+  );
+  private readonly exactDefinitionCache = new LruCache<string, CachedExactDefinition>(
+    maximumCachedExactDefinitions
+  );
+  /** Prevents an in-flight probe from repopulating caches after any invalidation. */
+  private cacheWriteGeneration = 0;
 
   public constructor(
     private readonly projects: PhysicalAssetProjectContextStore,
@@ -94,11 +120,61 @@ export class VscodePhysicalAssetSource implements
     };
   }
 
-  public resolveExactDefinition(
+  public async resolveExactDefinition(
     request: PhysicalAssetDefinitionRequest,
     signal?: AbortSignal
   ): Promise<PhysicalAssetDefinitionResolution> {
-    return resolveExactPhysicalAssetDefinition(request, this, signal);
+    throwIfAborted(signal, "Physical asset Definition resolution was cancelled.");
+    const cacheWriteGeneration = this.cacheWriteGeneration;
+    const cacheKey = exactDefinitionCacheKey(
+      request,
+      this.ownedOutputLookup?.getOwnershipRevision(request.context.projectId)
+    );
+    const cached = this.exactDefinitionCache.get(cacheKey);
+    if (cached && cached.expiresAt >= Date.now()) {
+      return cloneExactDefinitionResolution(cached.value);
+    }
+    if (cached) {
+      this.exactDefinitionCache.delete(cacheKey);
+    }
+
+    const resolution = await resolveExactPhysicalAssetDefinition(request, this, signal);
+    throwIfAborted(signal, "Physical asset Definition resolution was cancelled.");
+    if (
+      cacheWriteGeneration === this.cacheWriteGeneration
+      && (resolution.status === "resolved" || resolution.status === "missing")
+    ) {
+      this.exactDefinitionCache.set(cacheKey, {
+        projectId: request.context.projectId,
+        expiresAt: Date.now() + layerPlanVerificationWindowMs,
+        value: cloneExactDefinitionResolution(resolution)
+      });
+    }
+    return resolution;
+  }
+
+  public invalidateProjects(projectIds: readonly string[]): void {
+    if (projectIds.length === 0) {
+      return;
+    }
+    const affected = new Set(projectIds);
+    this.cacheWriteGeneration++;
+    for (const [key, entry] of this.layerPlanCache.entries()) {
+      if (affected.has(entry.projectId)) {
+        this.layerPlanCache.delete(key);
+      }
+    }
+    for (const [key, entry] of this.exactDefinitionCache.entries()) {
+      if (affected.has(entry.projectId)) {
+        this.exactDefinitionCache.delete(key);
+      }
+    }
+  }
+
+  public invalidateAll(): void {
+    this.cacheWriteGeneration++;
+    this.layerPlanCache.clear();
+    this.exactDefinitionCache.clear();
   }
 
   public async getOrderedAssetsRootUris(
@@ -122,6 +198,34 @@ export class VscodePhysicalAssetSource implements
     cancellation: AbortSignal
   ): Promise<LayerAssetsRootDiscovery> {
     throwIfAborted(cancellation, "Physical asset Definition resolution was cancelled.");
+    const cacheWriteGeneration = this.cacheWriteGeneration;
+    const cacheKey = layerPlanCacheKey(context, layer);
+    const cached = this.layerPlanCache.get(cacheKey);
+    if (cached && cached.expiresAt >= Date.now()) {
+      return cached.value;
+    }
+
+    const discovered = await this.discoverLayerAssetsRootUris(context, layer, cancellation);
+    throwIfAborted(cancellation, "Physical asset Definition resolution was cancelled.");
+    if (
+      cacheWriteGeneration === this.cacheWriteGeneration
+      && discovered.status === "ready"
+      && discovered.complete
+    ) {
+      this.layerPlanCache.set(cacheKey, {
+        projectId: context.projectId,
+        expiresAt: Date.now() + layerPlanVerificationWindowMs,
+        value: discovered
+      });
+    }
+    return discovered;
+  }
+
+  private async discoverLayerAssetsRootUris(
+    context: ResourcePackProjectContextDto,
+    layer: ResourceLayerDescriptor,
+    cancellation: AbortSignal
+  ): Promise<LayerAssetsRootDiscovery> {
     if (layer.layerId === context.localLayer.layerId) {
       const roots = await packAssetsRoots(
         context.outputPackRootUri,
@@ -268,11 +372,15 @@ export class VscodePhysicalAssetSource implements
     const discovered = await Promise.all(layer.assetsRootUris.map(rootUri =>
       collectLayerFileUris(rootUri, signal)
     ));
-    const byUri = new Map<string, { uri: vscode.Uri; assetsRootUri: SerializedResourceUri }>();
+    const byUri = new Map<string, {
+      uri: vscode.Uri;
+      assetsRootUri: SerializedResourceUri;
+      rootPriority: number;
+    }>();
     layer.assetsRootUris.forEach((assetsRootUri, index) => {
       for (const uri of discovered[index].uris) {
         if (!byUri.has(uri.toString())) {
-          byUri.set(uri.toString(), { uri, assetsRootUri });
+          byUri.set(uri.toString(), { uri, assetsRootUri, rootPriority: index });
         }
       }
     });
@@ -280,25 +388,41 @@ export class VscodePhysicalAssetSource implements
       if (!isIndexedFile(document.uri)) {
         continue;
       }
-      const assetsRootUri = layer.assetsRootUris.find(rootUri =>
+      const rootPriority = layer.assetsRootUris.findIndex(rootUri =>
         isResourceDocumentUriWithin(document.uri, rootUri)
       );
-      if (assetsRootUri) {
-        byUri.set(document.uri.toString(), { uri: document.uri, assetsRootUri });
+      const assetsRootUri = layer.assetsRootUris[rootPriority];
+      if (assetsRootUri !== undefined) {
+        byUri.set(document.uri.toString(), {
+          uri: document.uri,
+          assetsRootUri,
+          rootPriority
+        });
       }
     }
 
-    const loaded = await mapWithConcurrency([...byUri.values()], 16, item =>
-      loadScannedDocument(item.uri, item.assetsRootUri, layer, signal)
-    );
-    const effectiveDocuments = new Map<string, PhysicalAssetScannedDocument>();
-    for (const document of loaded) {
-      if (document && !effectiveDocuments.has(document.outputPath)) {
-        effectiveDocuments.set(document.outputPath, document);
+    const loaded = await mapWithConcurrency([...byUri.values()], 16, async item => ({
+      document: await loadScannedDocument(item.uri, item.assetsRootUri, layer, signal),
+      rootPriority: item.rootPriority
+    }));
+    const effectiveDocuments = new Map<string, {
+      document: PhysicalAssetScannedDocument;
+      rootPriority: number;
+    }>();
+    for (const item of loaded) {
+      if (!item.document) {
+        continue;
+      }
+      const current = effectiveDocuments.get(item.document.outputPath);
+      if (!current || item.rootPriority < current.rootPriority) {
+        effectiveDocuments.set(item.document.outputPath, {
+          document: item.document,
+          rootPriority: item.rootPriority
+        });
       }
     }
     return {
-      documents: [...effectiveDocuments.values()],
+      documents: [...effectiveDocuments.values()].map(item => item.document),
       failedUris: discovered.flatMap(result => result.failedUris)
     };
   }
@@ -503,6 +627,52 @@ function fileExtension(fileName: string): string {
 
 function languageIdFor(extension: string): string {
   return extension === ".json" ? "json" : extension === ".properties" ? "properties" : "plaintext";
+}
+
+function layerPlanCacheKey(
+  context: ResourcePackProjectContextDto,
+  layer: ResourceLayerDescriptor
+): string {
+  return [
+    context.projectId,
+    context.contextRevision,
+    layer.layerId,
+    layer.source,
+    layer.rootUri,
+    layer.metadataRevision
+  ].join("\0");
+}
+
+function exactDefinitionCacheKey(
+  request: PhysicalAssetDefinitionRequest,
+  ownershipRevision: string | undefined
+): string {
+  return [
+    request.context.projectId,
+    request.context.contextRevision,
+    request.scope,
+    request.target.kind,
+    request.target.id,
+    ownershipRevision ?? ""
+  ].join("\0");
+}
+
+function cloneExactDefinitionResolution<T extends Extract<
+  PhysicalAssetDefinitionResolution,
+  { status: "resolved" | "missing" }
+>>(resolution: T): T {
+  return {
+    ...resolution,
+    target: { ...resolution.target },
+    ...(resolution.status === "resolved"
+      ? {
+          definition: {
+            ...resolution.definition,
+            layer: { ...resolution.definition.layer }
+          }
+        }
+      : {})
+  } as T;
 }
 
 type UriTypeProbe =

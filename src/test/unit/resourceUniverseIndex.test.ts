@@ -53,6 +53,105 @@ describe("resource universe index", () => {
     assert.deepStrictEqual(index.getIncoming(modelKey).map(item => item.edgeId), [outgoing.edgeId]);
   });
 
+  it("reuses sorted query results without exposing cached arrays or resolution candidates", () => {
+    const index = new ResourceUniverseIndex();
+    const first = producer("physical", "handwritten", modelKey, "local");
+    const secondKey: ResourceGraphLogicalKey = { kind: "model", id: "demo:block/second" };
+    const second = producer("physical", "current", secondKey, "local");
+    const firstEdge = edge(first, textureKey);
+    const secondEdge = edge(second, textureKey);
+    index.replaceSnapshot(snapshot("physical", 1, [second, first], [secondEdge, firstEdge]));
+    const context = resolutionContext("effective", ["local-layer"], ["physical"]);
+
+    const originalSort = Array.prototype.sort;
+    let sortCalls = 0;
+    Array.prototype.sort = function <T>(
+      this: T[],
+      compareFn?: (left: T, right: T) => number
+    ): T[] {
+      sortCalls += 1;
+      return originalSort.call(this, compareFn) as T[];
+    } as typeof Array.prototype.sort;
+    try {
+      const incoming = index.getIncoming(textureKey);
+      const outgoing = index.getOutgoing(first.producerId);
+      const projectProducers = index.getProjectProducers("project");
+      const providerProducers = index.getProviderProjectProducers("physical", "project");
+      const resolved = index.resolve(modelKey, context);
+      assert.strictEqual(resolved.status, "resolved");
+
+      incoming.length = 0;
+      outgoing.length = 0;
+      projectProducers.length = 0;
+      providerProducers.length = 0;
+      resolved.candidates[0].matchedAs = "alias";
+      const warmupSortCalls = sortCalls;
+      assert.ok(warmupSortCalls > 0);
+
+      const incomingAgain = index.getIncoming(textureKey);
+      const outgoingAgain = index.getOutgoing(first.producerId);
+      const projectProducersAgain = index.getProjectProducers("project");
+      const providerProducersAgain = index.getProviderProjectProducers("physical", "project");
+      const resolvedAgain = index.resolve(modelKey, context);
+
+      assert.strictEqual(sortCalls, warmupSortCalls, "warm queries must not sort cached facts again");
+      assert.deepStrictEqual(incomingAgain.map(item => item.edgeId), [firstEdge.edgeId, secondEdge.edgeId].sort());
+      assert.deepStrictEqual(outgoingAgain.map(item => item.edgeId), [firstEdge.edgeId]);
+      assert.deepStrictEqual(
+        projectProducersAgain.map(item => item.producerId),
+        [first.producerId, second.producerId].sort()
+      );
+      assert.deepStrictEqual(
+        providerProducersAgain.map(item => item.producerId),
+        [first.producerId, second.producerId].sort()
+      );
+      assert.strictEqual(resolvedAgain.status, "resolved");
+      assert.strictEqual(resolvedAgain.candidates[0].matchedAs, "concrete");
+    } finally {
+      Array.prototype.sort = originalSort;
+    }
+  });
+
+  it("invalidates affected cached queries after snapshot replacement and removal", () => {
+    const index = new ResourceUniverseIndex();
+    const first = producer("physical", "handwritten", modelKey, "local");
+    const firstEdge = edge(first, textureKey);
+    const context = resolutionContext("effective", ["local-layer"], ["physical"]);
+    index.replaceSnapshot(snapshot("physical", 1, [first], [firstEdge]));
+
+    assert.strictEqual(index.resolve(modelKey, context).status, "resolved");
+    assert.deepStrictEqual(index.getIncoming(textureKey).map(item => item.edgeId), [firstEdge.edgeId]);
+    assert.deepStrictEqual(index.getOutgoing(first.producerId).map(item => item.edgeId), [firstEdge.edgeId]);
+    assert.strictEqual(index.getProjectProducers("project")[0].revision, "r1");
+    assert.strictEqual(index.getProviderProjectProducers("physical", "project")[0].revision, "r1");
+
+    const replacementTarget: ResourceGraphLogicalKey = { kind: "texture", id: "demo:block/replacement" };
+    assert.deepStrictEqual(index.getIncoming(replacementTarget), [], "negative results must also be cached safely");
+    const replacement = {
+      ...first,
+      revision: "r2",
+      outputPath: "assets/demo/models/block/replacement.json"
+    } satisfies ResourceProducer;
+    const replacementEdge = edge(replacement, replacementTarget);
+    index.replaceSnapshot(snapshot("physical", 2, [replacement], [replacementEdge]));
+
+    const replacedResolution = index.resolve(modelKey, context);
+    assert.strictEqual(replacedResolution.status, "resolved");
+    assert.strictEqual(replacedResolution.status === "resolved" ? replacedResolution.winner.revision : "", "r2");
+    assert.deepStrictEqual(index.getIncoming(textureKey), []);
+    assert.deepStrictEqual(index.getIncoming(replacementTarget).map(item => item.edgeId), [replacementEdge.edgeId]);
+    assert.deepStrictEqual(index.getOutgoing(first.producerId).map(item => item.edgeId), [replacementEdge.edgeId]);
+    assert.strictEqual(index.getProjectProducers("project")[0].revision, "r2");
+    assert.strictEqual(index.getProviderProjectProducers("physical", "project")[0].revision, "r2");
+
+    index.removeProviderProject("physical", "project");
+    assert.deepStrictEqual(index.getIncoming(replacementTarget), []);
+    assert.deepStrictEqual(index.getOutgoing(first.producerId), []);
+    assert.deepStrictEqual(index.getProjectProducers("project"), []);
+    assert.deepStrictEqual(index.getProviderProjectProducers("physical", "project"), []);
+    assert.strictEqual(index.resolve(modelKey, context).status, "incomplete");
+  });
+
   it("only returns deterministic missing when every applicable provider has complete coverage", () => {
     const index = new ResourceUniverseIndex();
     index.replaceSnapshot(snapshot("physical", 1, [], [], authoritative("physical-r1")));

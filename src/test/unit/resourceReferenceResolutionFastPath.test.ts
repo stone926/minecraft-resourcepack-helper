@@ -49,6 +49,41 @@ describe("resource reference resolution fast path", function () {
     assertTestProcessStatus(result);
   });
 
+  it("combines an exact physical probe with target-scoped generated facts", () => {
+    const script = [
+      "const assert = require('node:assert/strict');",
+      "const Module = require('node:module'); const originalLoad = Module._load;",
+      "const uri = value => { const parsed = new URL(value); const filePath = decodeURIComponent(parsed.pathname); return { scheme: parsed.protocol.slice(0, -1), path: filePath, fsPath: filePath, toString: () => value }; };",
+      "Module._load = function(request, ...args) { if (request === 'vscode') return { Uri: { parse: uri } }; return originalLoad.call(this, request, ...args); };",
+      "const { ResourceUniverseNavigationFacade } = require(process.argv[1]);",
+      "const layer = (layerId, role, rootUri, priority) => ({ layerId, role, source: 'directory', rootUri, priority, metadataRevision: 'm1' });",
+      "const localLayer = layer('local', 'local', 'file:///pack', 0); const customLayer = layer('custom', 'custom', 'file:///custom', 1);",
+      "const context = { projectId: 'project', workspaceFolderUri: 'file:///pack', projectRootUri: 'file:///pack', packRootUri: 'file:///pack', assetsRootUri: 'file:///pack/assets', rsglSourceRootUris: ['file:///pack/rsgl'], outputPackRootUri: 'file:///pack', outputAssetsRootUri: 'file:///pack/assets', localLayer, externalLayers: [customLayer], overlaySelection: [], configurationRevision: 'c1', contextRevision: 'r1' };",
+      "const projects = { resolveProject: async () => ({ context, rsglApplicability: 'conventional' }), getRsglApplicability: () => 'conventional', findCachedContextsForUri: () => [], getCachedContexts: () => [] };",
+      "const target = { kind: 'model', id: 'demo:block/target' }; const generatedUri = 'file:///pack/rsgl/generated.rsgl';",
+      "const generated = { producerId: 'rsgl:generated', providerId: 'rsgl', projectId: 'project', layerId: 'local', layerRole: 'local', origin: 'generated', logicalKeys: [target], sourceOrigins: [{ uri: generatedUri, origin: 'generated', editable: true }], physicalOrigins: [], materializationState: 'unbuilt', outputPath: 'assets/demo/models/block/target.json', revision: 'g1' };",
+      "const generatedCoverage = { status: 'authoritative', revision: 'g1', coveredScope: { projectId: 'project' } }; const physicalCoverage = { status: 'authoritative', revision: 'p1', coveredScope: { projectId: 'project' } };",
+      "let generatedEnabled = false; let exactLayer = localLayer; let refreshed = false; let physicalRefreshes = 0; let exactCalls = 0; let indexResolutions = 0;",
+      "const index = { getCoverage: provider => provider === 'rsgl' ? generatedCoverage : refreshed ? physicalCoverage : undefined, resolve: (resolvedTarget, resolutionContext) => { indexResolutions++; if (resolutionContext.applicableProviderIds.length === 1) { assert.deepStrictEqual(resolutionContext.applicableProviderIds, ['rsgl']); return { status: 'resolved', target: resolvedTarget, winner: generated, candidates: [{ producer: generated, matchedAs: 'concrete', layerPriority: 0 }], coverageComplete: true, unavailableProviderIds: [] }; } return { status: 'conflict', target: resolvedTarget, candidates: [{ producer: generated, matchedAs: 'concrete', layerPriority: 0 }], coverageComplete: true, unavailableProviderIds: [] }; }, getProducersForKey: () => generatedEnabled ? [generated] : [] };",
+      "const universe = { index, getCoverage: (provider, projectId) => index.getCoverage(provider, projectId), getProducersForKey: targetKey => index.getProducersForKey(targetKey), getProjectProducers: () => [], hasProvider: () => true, getRegisteredProvider: () => ({}), refreshProviderProject: async provider => { assert.strictEqual(provider, 'physical'); physicalRefreshes++; refreshed = true; return { applied: true }; }, invalidateProviderProject: () => undefined, onDidChange: () => ({ dispose() {} }) };",
+      "const exact = { resolveExactDefinition: async request => { exactCalls++; return { status: 'resolved', target: request.target, definition: { uri: exactLayer.role === 'local' ? 'file:///pack/assets/demo/models/block/target.json' : 'file:///custom/assets/demo/models/block/target.json', outputPath: 'assets/demo/models/block/target.json', assetsRootUri: exactLayer.role === 'local' ? 'file:///pack/assets' : 'file:///custom/assets', layer: exactLayer } }; } };",
+      "const facade = new ResourceUniverseNavigationFacade(projects, universe); facade.setPhysicalDefinitionResolver(exact);",
+      "const document = { uri: uri('file:///pack/assets/demo/models/block/consumer.json'), fileName: '/pack/assets/demo/models/block/consumer.json', languageId: 'json', getText: () => '{}' };",
+      "const reference = { value: target.id, valueNode: {}, target: 'models', source: 'assets', extension: 'json', kind: target.kind };",
+      "(async () => {",
+      "  let result = await facade.resolveReference(document, reference, { includeGenerated: true });",
+      "  assert.strictEqual(result.targetUri.toString(), 'file:///pack/assets/demo/models/block/target.json', 'an authoritative generated miss keeps the exact physical winner');",
+      "  generatedEnabled = true; exactLayer = customLayer; result = await facade.resolveReference(document, reference, { includeGenerated: true });",
+      "  assert.strictEqual(result.targetUri.toString(), generatedUri, 'the local generated candidate outranks the custom physical candidate'); assert.strictEqual(result.navigation.status, 'resolved');",
+      "  exactLayer = localLayer; result = await facade.resolveReference(document, reference, { includeGenerated: true });",
+      "  assert.strictEqual(result.targetUri, null); assert.strictEqual(result.navigation.status, 'conflict', 'same-layer ownership/conflicts retain the coupled index path');",
+      "  assert.deepStrictEqual({ exactCalls, physicalRefreshes, indexResolutions }, { exactCalls: 3, physicalRefreshes: 1, indexResolutions: 2 });",
+      "})().catch(error => { console.error(error); process.exitCode = 1; });"
+    ].join("\n");
+    const result = runFacadeScript(script);
+    assertTestProcessStatus(result);
+  });
+
   it("resolves an exact RSGL physical Definition without refreshing the project index", () => {
     const script = [
       "const assert = require('node:assert/strict');",

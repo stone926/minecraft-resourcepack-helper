@@ -24,9 +24,11 @@ export class ResourceProjectUniverseInvalidator {
     return uniqueProjectIds;
   }
 
-  public invalidateAllKnownProjects(): void {
-    for (const context of this.projects.getCachedContexts()) {
-      this.universe.invalidateProviderProject(physicalProviderId, context.projectId, "stale");
+  public invalidateAllKnownProjects(): readonly string[] {
+    const projectIds = this.projects.getCachedContexts().map(context => context.projectId);
+    for (const projectId of projectIds) {
+      this.universe.invalidateProviderProject(physicalProviderId, projectId, "stale");
     }
+    return projectIds;
   }
 }

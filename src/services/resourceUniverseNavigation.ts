@@ -73,12 +73,16 @@ export interface UnifiedResourceProducerTarget {
 export interface UnifiedResourceInventory {
   resources: readonly UnifiedResourceProducerTarget[];
   coverage: UnifiedResourceCoverage;
+  /** Projects whose indexed facts were considered; empty means discovery still needs an anchor. */
+  projectIds?: readonly string[];
 }
 
 export interface UnifiedResourceInventoryOptions {
   signal?: AbortSignal;
   /** Restricts inventory to projects explicitly discovered for this consumer. */
   projectIds?: readonly string[];
+  /** Selects logical targets from only local producers or from the complete effective stack. */
+  layerScope?: "local" | "effective";
   /** Correlates provider changes requested while assembling this inventory. */
   causeId?: symbol;
 }

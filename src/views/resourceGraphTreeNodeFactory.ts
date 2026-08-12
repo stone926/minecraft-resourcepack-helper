@@ -168,7 +168,23 @@ export function compareNodes(left: ResourceGraphTreeNodeModel, right: ResourceGr
 }
 
 function toChildrenProvider(children: ResourceGraphChildren | undefined): () => Promise<ResourceGraphTreeNodeModel[]> {
-  return typeof children === "function"
-    ? children
-    : () => Promise.resolve(children ?? []);
+  if (typeof children !== "function") {
+    return () => Promise.resolve(children ?? []);
+  }
+
+  let childrenPromise: Promise<ResourceGraphTreeNodeModel[]> | undefined;
+  return () => {
+    if (childrenPromise) {
+      return childrenPromise;
+    }
+    try {
+      childrenPromise = children().catch(error => {
+        childrenPromise = undefined;
+        throw error;
+      });
+      return childrenPromise;
+    } catch (error) {
+      return Promise.reject(error);
+    }
+  };
 }

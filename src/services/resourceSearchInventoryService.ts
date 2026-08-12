@@ -12,7 +12,10 @@ import {
   summarizeGeneratedInventoryFacts,
   summarizeLocalPhysicalInventoryFacts
 } from "./resourceFactsCoverage";
-import { createResourceResolutionContext } from "./resourceNavigationContext";
+import {
+  createResourceResolutionContext,
+  visibleResourceCoverage
+} from "./resourceNavigationContext";
 import type {
   UnifiedResourceCoverage,
   UnifiedResourceInventory,
@@ -43,6 +46,7 @@ export class ResourceSearchInventoryService {
     const contexts = this.projects.getCachedContexts()
       .filter(context => !scopedProjectIds || scopedProjectIds.has(context.projectId));
     const requestedKinds = new Set(kinds);
+    const layerScope = options.layerScope ?? "local";
     const cachedProjectIds = new Set(contexts.map(context => context.projectId));
     const coverages: UnifiedResourceCoverage[] = scopedProjectIds
       ? [...scopedProjectIds]
@@ -63,10 +67,10 @@ export class ResourceSearchInventoryService {
           causeId: options.causeId
         }
       );
-      coverages.push(summarizeLocalPhysicalInventoryFacts(
-        this.universe.getCoverage(physicalProviderId, context.projectId),
-        context.outputPackRootUri
-      ));
+      const physicalCoverage = this.universe.getCoverage(physicalProviderId, context.projectId);
+      coverages.push(layerScope === "effective"
+        ? visibleResourceCoverage(physicalCoverage)
+        : summarizeLocalPhysicalInventoryFacts(physicalCoverage, context.outputPackRootUri));
       if (ensured.rsglApplicability !== "none") {
         coverages.push(summarizeGeneratedInventoryFacts(
           this.universe.getCoverage(rsglGeneratedProviderId, context.projectId)
@@ -74,7 +78,7 @@ export class ResourceSearchInventoryService {
       }
 
       const targets = uniqueLogicalKeys(this.universe.getProjectProducers(context.projectId)
-        .filter(producer => producer.layerRole === "local")
+        .filter(producer => layerScope === "effective" || producer.layerRole === "local")
         .flatMap(producer => producer.logicalKeys)
         .filter(target => requestedKinds.has(target.kind)));
       for (const target of targets) {
@@ -94,7 +98,8 @@ export class ResourceSearchInventoryService {
     }
     return {
       resources: uniqueProducerTargets(resources),
-      coverage: combineCoverage(coverages)
+      coverage: combineCoverage(coverages),
+      projectIds: contexts.map(context => context.projectId)
     };
   }
 

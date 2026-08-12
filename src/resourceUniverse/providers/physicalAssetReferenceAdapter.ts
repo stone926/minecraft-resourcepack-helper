@@ -31,24 +31,62 @@ export function adaptPhysicalAssetDocuments(
   documents: readonly PhysicalAssetScannedDocument[],
   extractReferences: PhysicalAssetReferenceExtractor = getResourceReferences
 ): PhysicalResourceDocumentFact[] {
-  return documents.map(document => ({
+  return documents.map(document => {
+    const cachedDocument = cacheDocumentText(document);
+    const references = extractReferences(cachedDocument);
+    if (references.length === 0) {
+      return physicalDocumentFact(document, []);
+    }
+
+    const text = cachedDocument.getText();
+    const lineStarts = getLineStarts(text);
+    return physicalDocumentFact(document, references.map(reference =>
+      physicalReferenceFact(document, reference, text, lineStarts)
+    ));
+  });
+}
+
+function cacheDocumentText(
+  document: ResourceReferenceDocument
+): ResourceReferenceDocument {
+  let initialized = false;
+  let text = "";
+  return {
+    languageId: document.languageId,
+    fileName: document.fileName,
+    version: document.version,
+    getText: () => {
+      if (!initialized) {
+        text = document.getText();
+        initialized = true;
+      }
+      return text;
+    }
+  };
+}
+
+function physicalDocumentFact(
+  document: PhysicalAssetScannedDocument,
+  references: PhysicalResourceReferenceFact[]
+): PhysicalResourceDocumentFact {
+  return {
     uri: document.uri,
     fileName: document.fileName,
     revision: document.revision,
     layerId: document.layerId,
     layerRole: document.layerRole,
     outputPath: document.outputPath,
-    references: extractReferences(document).map(reference =>
-      physicalReferenceFact(document, reference)
-    )
-  }));
+    references
+  };
 }
 
 function physicalReferenceFact(
   document: PhysicalAssetScannedDocument,
-  reference: ResourceReference
+  reference: ResourceReference,
+  text: string,
+  lineStarts: readonly number[]
 ): PhysicalResourceReferenceFact {
-  const range = referenceRange(document.getText(), reference);
+  const range = referenceRange(text, lineStarts, reference);
   return {
     targetKind: reference.kind,
     value: reference.value,
@@ -68,13 +106,13 @@ function physicalReferenceFact(
 
 function referenceRange(
   text: string,
+  lineStarts: readonly number[],
   reference: ResourceReference
 ): { start: number; end: number } | undefined {
   const location = reference.valueNode.valueLoc ?? reference.valueNode.loc;
   if (!location) {
     return undefined;
   }
-  const lineStarts = getLineStarts(text);
   const start = offsetAt(lineStarts, text.length, location.start.line, location.start.column);
   const end = offsetAt(lineStarts, text.length, location.end.line, location.end.column);
   return start === undefined || end === undefined
@@ -104,4 +142,3 @@ function offsetAt(
   }
   return Math.min(textLength, lineStart + Math.max(0, oneBasedColumn - 1));
 }
-

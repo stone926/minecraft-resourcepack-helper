@@ -28,11 +28,21 @@ import type {
   ResourceGraphUriLike
 } from "../views/resourceGraphTreeModel";
 
+export interface ResourceGraphLegacyBlockstateInventory {
+  getBlockstateUris(): Promise<readonly ResourceGraphUriLike[]>;
+}
+
 export class ResourceGraphService implements ResourceGraphTreeModelHost {
   private readonly workspaceQuery = new ResourceGraphWorkspaceCache();
   private readonly index = new ResourceGraphIndex(this.workspaceQuery);
+  private readonly legacyBlockstateInventory: ResourceGraphLegacyBlockstateInventory;
 
-  public constructor(private readonly navigation: ResourceUniverseNavigation) {}
+  public constructor(
+    private readonly navigation: ResourceUniverseNavigation,
+    legacyBlockstateInventory?: ResourceGraphLegacyBlockstateInventory
+  ) {
+    this.legacyBlockstateInventory = legacyBlockstateInventory ?? this.workspaceQuery;
+  }
 
   public invalidateAll(): void {
     this.index.invalidate();
@@ -50,38 +60,30 @@ export class ResourceGraphService implements ResourceGraphTreeModelHost {
   }
 
   public async getBlockstateInventory(): Promise<ResourceGraphBlockInventory> {
-    let uris: readonly ResourceGraphUriLike[];
-    try {
-      uris = await this.workspaceQuery.getBlockstateUris();
-    } catch (error) {
-      return {
-        status: "unknown",
-        reason: error instanceof Error ? error.message : String(error)
-      };
+    let legacyUris: readonly ResourceGraphUriLike[] = [];
+    let inventory = await this.navigation.getKnownResources(["blockstate"], {
+      layerScope: "effective"
+    });
+    if ((inventory.projectIds?.length ?? 0) === 0 || inventory.coverage === "unavailable") {
+      try {
+        legacyUris = await this.legacyBlockstateInventory.getBlockstateUris();
+      } catch (error) {
+        return inventory.resources.length === 0
+          ? {
+              status: "unknown",
+              reason: error instanceof Error ? error.message : String(error)
+            }
+          : blockInventoryFromUniverse(inventory, [], error);
+      }
+      const anchors = uniqueProjectAnchors(legacyUris);
+      await Promise.all(anchors.map(uri =>
+        this.navigation.ensureProjectForUri(toVscodeUri(uri))
+      ));
+      inventory = await this.navigation.getKnownResources(["blockstate"], {
+        layerScope: "effective"
+      });
     }
-    const anchors = uniqueProjectAnchors(uris);
-    await Promise.all(anchors.map(uri =>
-      this.navigation.ensureProjectForUri(toVscodeUri(uri))
-    ));
-    const generated = await this.navigation.getKnownResources(["blockstate"]);
-    const resources = generated.resources
-      .filter(resource => resource.producer.origin === "generated")
-      .map(resource => ({
-        target: resource.target,
-        producer: resource.producer,
-        candidates: resource.candidates,
-        resolutionStatus: resource.resolutionStatus
-      } satisfies ResourceGraphProjectedResource));
-    return generated.coverage !== "authoritative"
-      ? {
-          status: "partial",
-          uris,
-          resources,
-          reason: generated.coverage === "partial"
-            ? vscode.l10n.t("Some local or RSGL resources could not be indexed.")
-            : vscode.l10n.t("The resource inventory is unavailable.")
-        }
-      : { status: "authoritative", uris, resources };
+    return blockInventoryFromUniverse(inventory, legacyUris);
   }
 
   public async getDocumentProjection(
@@ -314,6 +316,47 @@ export class ResourceGraphService implements ResourceGraphTreeModelHost {
       await this.configureVanillaSource();
     }
   }
+}
+
+function blockInventoryFromUniverse(
+  inventory: Awaited<ReturnType<ResourceUniverseNavigation["getKnownResources"]>>,
+  legacyUris: readonly ResourceGraphUriLike[],
+  error?: unknown
+): ResourceGraphBlockInventory {
+  const resources = inventory.resources
+    .filter(resource => resource.producer.origin === "generated")
+    .map(resource => ({
+      target: resource.target,
+      producer: resource.producer,
+      candidates: resource.candidates,
+      resolutionStatus: resource.resolutionStatus
+    } satisfies ResourceGraphProjectedResource));
+  const physicalUris = inventory.resources.flatMap(resource => {
+    if (resource.producer.origin !== "physical") {
+      return [];
+    }
+    const origin = resource.producer.physicalOrigins[0];
+    return origin ? [vscode.Uri.parse(origin.uri, true)] : [];
+  });
+  const uris = uniqueResourceGraphUris(
+    inventory.coverage === "unavailable" ? [...physicalUris, ...legacyUris] : physicalUris
+  );
+  return inventory.coverage !== "authoritative"
+    ? {
+        status: "partial",
+        uris,
+        resources,
+        reason: error instanceof Error
+          ? error.message
+          : inventory.coverage === "partial"
+          ? vscode.l10n.t("Some local or RSGL resources could not be indexed.")
+          : vscode.l10n.t("The resource inventory is unavailable.")
+      }
+    : { status: "authoritative", uris, resources };
+}
+
+function uniqueResourceGraphUris(uris: readonly ResourceGraphUriLike[]): ResourceGraphUriLike[] {
+  return [...new Map(uris.map(uri => [uri.toString(), uri])).values()];
 }
 
 function uniqueProjectAnchors(uris: readonly ResourceGraphUriLike[]): ResourceGraphUriLike[] {

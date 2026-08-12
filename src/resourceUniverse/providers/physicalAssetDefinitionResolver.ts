@@ -50,6 +50,10 @@ export interface PhysicalAssetDefinitionResolver {
     request: PhysicalAssetDefinitionRequest,
     signal?: AbortSignal
   ): Promise<PhysicalAssetDefinitionResolution>;
+  /** Drops topology plans retained for projects affected by a filesystem mutation. */
+  invalidateProjects?(projectIds: readonly string[]): void;
+  /** Drops every retained topology plan, for example after configuration changes. */
+  invalidateAll?(): void;
 }
 
 export interface ExactPhysicalAssetDefinition {
@@ -65,7 +69,6 @@ export type PhysicalAssetDefinitionFallbackReason =
   | "unsupportedLayer"
   | "unavailableLayer"
   | "unavailableTarget"
-  | "multipleCandidates"
   | "ownedOutput";
 
 export type PhysicalAssetDefinitionResolution =
@@ -142,7 +145,6 @@ export async function resolveExactPhysicalAssetDefinition(
       );
     }
 
-    let matchedDefinition: ExactPhysicalAssetDefinition | undefined;
     for (const assetsRootUri of roots.assetsRootUris) {
       let candidateUri: SerializedResourceUri;
       try {
@@ -178,25 +180,15 @@ export async function resolveExactPhysicalAssetDefinition(
           uri: candidateUri
         });
       }
-      if (matchedDefinition) {
-        return fallback(target, "multipleCandidates", {
-          outputPath,
-          layerId: layer.layerId,
-          uri: candidateUri
-        });
-      }
-      matchedDefinition = {
-        uri: candidateUri,
-        outputPath,
-        assetsRootUri,
-        layer
-      };
-    }
-    if (matchedDefinition) {
       return {
         status: "resolved",
         target,
-        definition: matchedDefinition
+        definition: {
+          uri: candidateUri,
+          outputPath,
+          assetsRootUri,
+          layer
+        }
       };
     }
   }

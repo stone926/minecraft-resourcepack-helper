@@ -1,4 +1,5 @@
 import { resourceProjectAnchorWatcherGlob } from "../../packages/resource-project/src";
+import { uniqueValues } from "../../packages/mc-assets/src";
 import * as vscode from "vscode";
 import { ResourcePackProjectService } from "../resourceProject/resourcePackProjectService";
 import { VscodeResourcePackProjectHost } from "../resourceProject/vscodeResourceProjectHost";
@@ -76,7 +77,9 @@ export function createResourceInfrastructure(): ResourceInfrastructure {
   }
 
   function invalidateProjects(projectIds: readonly string[]): void {
-    for (const projectId of new Set(projectIds)) {
+    const uniqueProjectIds = uniqueValues(projectIds);
+    physicalSource.invalidateProjects(uniqueProjectIds);
+    for (const projectId of uniqueProjectIds) {
       universe.removeProject(projectId);
     }
   }
