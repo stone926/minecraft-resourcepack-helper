@@ -349,7 +349,7 @@ function blockInventoryFromUniverse(
         reason: error instanceof Error
           ? error.message
           : inventory.coverage === "partial"
-          ? vscode.l10n.t("Some local or RSGL resources could not be indexed.")
+          ? vscode.l10n.t("Some resources could not be indexed.")
           : vscode.l10n.t("The resource inventory is unavailable.")
       }
     : { status: "authoritative", uris, resources };

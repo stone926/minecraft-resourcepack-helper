@@ -114,7 +114,7 @@ describe("resource-universe benchmark smoke", function () {
         zipEntries: 100
       });
       assert.ok(report.limitations.some(limitation => /does not claim a real SSH/.test(limitation)));
-      assert.strictEqual(Object.keys(report.compiledInputs).length, 5);
+      assert.strictEqual(Object.keys(report.compiledInputs).length, 6);
       assert.deepStrictEqual(
         report.scenarios.map(scenario => scenario.id),
         [...benchmark.resourceUniverseBenchmarkScenarioIds]
@@ -148,6 +148,12 @@ describe("resource-universe benchmark smoke", function () {
       assert.strictEqual(largePack?.counts.physicalEdges, 500);
       assert.ok((largePack?.counts.snapshotBytes ?? 0) > 0);
       assert.ok((largePack?.counts.peakObservedRssBytes ?? 0) > 0);
+      assert.strictEqual(largePack?.counts.resourceSearchEntries, 500);
+      assert.strictEqual(largePack?.counts.resourceSearchResultLimit, 200);
+      assert.strictEqual(largePack?.evidence.preparedInventoryReusedAcrossQueries, true);
+      assert.ok((largePack?.measurements.resourceSearchPreparationMilliseconds?.samples ?? 0) > 0);
+      assert.ok((largePack?.measurements.exactResourceSearchBatchMilliseconds?.samples ?? 0) > 0);
+      assert.ok((largePack?.measurements.broadResourceSearchBatchMilliseconds?.samples ?? 0) > 0);
 
       const zip = report.scenarios.find(scenario => scenario.id === "extraction-free-zip");
       assert.strictEqual(zip?.counts.archiveEntries, 100);

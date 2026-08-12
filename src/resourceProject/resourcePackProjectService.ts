@@ -153,12 +153,22 @@ export class ResourcePackProjectService {
     const normalized = normalizeResourceProjectUri(workspaceFolderUri);
     const invalidated = new Set<string>();
     for (const [key, entry] of this.entries) {
-      if (entry.context?.workspaceFolderUri !== normalized) {
+      // Until discovery selects an owner, a source outside every workspace can
+      // still depend on the complete folder set. Evict pending entries rather
+      // than letting an old configuration snapshot publish after this event.
+      const pendingResolutionMayDependOnAnyWorkspace = entry.context === undefined;
+      const resolvedInWorkspace = entry.context?.workspaceFolderUri === normalized;
+      const sourceIsInWorkspace = isResourceProjectUriWithin(entry.sourceUri, normalized);
+      if (!pendingResolutionMayDependOnAnyWorkspace
+        && !resolvedInWorkspace
+        && !sourceIsInWorkspace) {
         continue;
       }
-      invalidated.add(entry.context.projectId);
-      this.contextsByProjectId.delete(entry.context.projectId);
-      this.rsglApplicabilityByProjectId.delete(entry.context.projectId);
+      if (entry.context) {
+        invalidated.add(entry.context.projectId);
+        this.contextsByProjectId.delete(entry.context.projectId);
+        this.rsglApplicabilityByProjectId.delete(entry.context.projectId);
+      }
       this.entries.delete(key);
     }
     return [...invalidated];

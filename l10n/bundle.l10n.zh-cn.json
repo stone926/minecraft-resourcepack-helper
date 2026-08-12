@@ -292,7 +292,7 @@
   "Exclude {0}": "排除{0}",
   "Include {0}": "包含{0}",
   "Selected Resource": "已选择资源",
-  "Some local or RSGL resources could not be indexed.": "部分本地或 RSGL 资源无法建立索引。",
+  "Some resources could not be indexed.": "部分资源无法建立索引。",
   "Some resource results may be incomplete.": "部分资源搜索结果可能不完整。",
   "Stale": "待重新构建",
   "The resource inventory is unavailable.": "资源清单不可用。",

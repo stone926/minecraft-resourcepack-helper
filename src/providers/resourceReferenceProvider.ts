@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import type { ResourceUniverseNavigation } from "../services/resourceUniverseNavigation";
-import { toVscodeLocation, uniqueVscodeLocations } from "../utils/resourceLocationVscode";
+import { toVscodeLocations, uniqueVscodeLocations } from "../utils/resourceLocationVscode";
 
 /**
  * Main-side References bridge for physical definition files. RSGL documents
@@ -21,9 +21,10 @@ export function createResourceReferenceProvider(
         return undefined;
       }
 
-      const locations = await Promise.all(result.references.map(reference =>
-        toVscodeLocation({ uri: reference.sourceUri, range: reference.sourceRange }, token)
-      ));
+      const locations = await toVscodeLocations(result.references.map(reference => ({
+        uri: reference.sourceUri,
+        range: reference.sourceRange
+      })), token);
       if (context.includeDeclaration) {
         locations.unshift(new vscode.Location(document.uri, new vscode.Position(0, 0)));
       }

@@ -50,7 +50,10 @@
         "coldResolutionBatchMilliseconds": 50,
         "warmResolutionBatchMilliseconds": 50,
         "coldIncomingBatchMilliseconds": 50,
-        "warmIncomingBatchMilliseconds": 50
+        "warmIncomingBatchMilliseconds": 50,
+        "resourceSearchPreparationMilliseconds": 100,
+        "exactResourceSearchBatchMilliseconds": 100,
+        "broadResourceSearchBatchMilliseconds": 100
       },
       "extraction-free-zip": {
         "centralDirectoryIndexMilliseconds": 100,

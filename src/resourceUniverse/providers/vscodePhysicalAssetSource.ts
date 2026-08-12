@@ -308,7 +308,10 @@ export class VscodePhysicalAssetSource implements
     }
 
     const { layers, unavailableUris } = await this.resolveScannableLayers(context, signal);
-    const scanned = await Promise.all(layers.map(layer => this.scanLayer(layer, signal)));
+    const openDocumentsByUri = indexOpenTextDocuments(vscode.workspace.textDocuments);
+    const scanned = await Promise.all(layers.map(layer =>
+      this.scanLayer(layer, openDocumentsByUri, signal)
+    ));
     const failedUris = [...unavailableUris, ...scanned.flatMap(result => result.failedUris)];
     const documents = scanned.flatMap(result => result.documents);
     const ownedOutputPaths = this.ownedOutputLookup?.getOwnedOutputPaths(request.projectId)
@@ -367,6 +370,7 @@ export class VscodePhysicalAssetSource implements
 
   private async scanLayer(
     layer: ScannableLayer,
+    openDocumentsByUri: ReadonlyMap<string, vscode.TextDocument>,
     signal: AbortSignal
   ): Promise<{ documents: PhysicalAssetScannedDocument[]; failedUris: string[] }> {
     const discovered = await Promise.all(layer.assetsRootUris.map(rootUri =>
@@ -384,10 +388,7 @@ export class VscodePhysicalAssetSource implements
         }
       }
     });
-    for (const document of vscode.workspace.textDocuments) {
-      if (!isIndexedFile(document.uri)) {
-        continue;
-      }
+    for (const document of openDocumentsByUri.values()) {
       const rootPriority = layer.assetsRootUris.findIndex(rootUri =>
         isResourceDocumentUriWithin(document.uri, rootUri)
       );
@@ -402,7 +403,13 @@ export class VscodePhysicalAssetSource implements
     }
 
     const loaded = await mapWithConcurrency([...byUri.values()], 16, async item => ({
-      document: await loadScannedDocument(item.uri, item.assetsRootUri, layer, signal),
+      document: await loadScannedDocument(
+        item.uri,
+        item.assetsRootUri,
+        layer,
+        openDocumentsByUri.get(item.uri.toString()),
+        signal
+      ),
       rootPriority: item.rootPriority
     }));
     const effectiveDocuments = new Map<string, {
@@ -438,9 +445,9 @@ async function collectLayerFileUris(
     uri: vscode.Uri.parse(rootUri, true),
     depth: 0
   }];
-  while (queue.length > 0) {
+  for (let queueIndex = 0; queueIndex < queue.length; queueIndex++) {
     throwIfAborted(signal, "Physical asset scan was cancelled.");
-    const current = queue.shift()!;
+    const current = queue[queueIndex];
     let entries: [string, vscode.FileType][];
     try {
       entries = await vscode.workspace.fs.readDirectory(current.uri);
@@ -468,12 +475,10 @@ async function loadScannedDocument(
   uri: vscode.Uri,
   assetsRootUri: SerializedResourceUri,
   layer: ScannableLayer,
+  openDocument: vscode.TextDocument | undefined,
   signal: AbortSignal
 ): Promise<PhysicalAssetScannedDocument | null> {
   throwIfAborted(signal, "Physical asset scan was cancelled.");
-  const openDocument = vscode.workspace.textDocuments.find(document =>
-    document.uri.toString() === uri.toString()
-  );
   let stat: vscode.FileStat | undefined;
   try {
     stat = await vscode.workspace.fs.stat(uri);
@@ -517,6 +522,18 @@ async function loadScannedDocument(
     outputPath: packRelativeOutputPath(uri, assetsRootUri),
     getText: () => text
   };
+}
+
+function indexOpenTextDocuments(
+  documents: readonly vscode.TextDocument[]
+): ReadonlyMap<string, vscode.TextDocument> {
+  const byUri = new Map<string, vscode.TextDocument>();
+  for (const document of documents) {
+    if (isIndexedFile(document.uri) && !byUri.has(document.uri.toString())) {
+      byUri.set(document.uri.toString(), document);
+    }
+  }
+  return byUri;
 }
 
 interface AssetsRootDiscovery {

@@ -13,6 +13,8 @@ import type {
 
 /** VS Code filesystem/configuration boundary for the URI-neutral service. */
 export class VscodeResourcePackProjectHost implements ResourcePackProjectServiceHost {
+  private workspaceFolders?: readonly ResourceProjectWorkspaceFolder[];
+
   public async stat(uri: SerializedResourceUri): Promise<"file" | "directory" | null> {
     try {
       const stat = await vscode.workspace.fs.stat(vscode.Uri.parse(uri, true));
@@ -51,7 +53,10 @@ export class VscodeResourcePackProjectHost implements ResourcePackProjectService
   }
 
   public getWorkspaceFolders(): readonly ResourceProjectWorkspaceFolder[] {
-    return (vscode.workspace.workspaceFolders ?? []).map(folder => {
+    if (this.workspaceFolders) {
+      return this.workspaceFolders;
+    }
+    this.workspaceFolders = (vscode.workspace.workspaceFolders ?? []).map(folder => {
       const folderUri = folder.uri.toString();
       const configuration = getResourceConfiguration(folder.uri);
       const vanillaResourcePackPath = configuration.defaultAssetsPath;
@@ -71,5 +76,11 @@ export class VscodeResourcePackProjectHost implements ResourcePackProjectService
         })
       };
     });
+    return this.workspaceFolders;
+  }
+
+  /** Configuration and workspace-folder events explicitly expire this snapshot. */
+  public invalidateWorkspaceFolders(): void {
+    this.workspaceFolders = undefined;
   }
 }

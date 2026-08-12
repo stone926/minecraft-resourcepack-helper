@@ -55,7 +55,8 @@ describe("resource graph index contract", () => {
       "utf8"
     );
 
-    assert.ok(tree.includes("if (invalidateInventory)"));
+    assert.ok(tree.includes("this.pendingInventoryInvalidation ||= invalidateInventory"));
+    assert.ok(tree.includes("if (shouldInvalidateInventory)"));
     assert.ok(events.includes('kind !== "change" && isBlockstateDocumentPath(uri.fsPath)'));
     assert.ok(events.includes('handleChange(uri, "create")'));
     assert.ok(events.includes('handleChange(uri, "delete")'));

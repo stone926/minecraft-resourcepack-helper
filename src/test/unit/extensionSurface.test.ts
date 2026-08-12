@@ -129,6 +129,8 @@ describe("extension surface", () => {
     assert.ok(source.includes("navigation.setPhysicalDefinitionResolver(physicalSource)"));
     assert.ok(source.includes("physicalSource.invalidateProjects(uniqueProjectIds)"));
     assert.ok(source.includes("resourceProjectAnchorWatcherGlob"));
+    assert.ok(source.includes("projectHost.invalidateWorkspaceFolders()"));
+    assert.ok(source.includes("onDidChangeWorkspaceFolders"));
     assert.strictEqual(source.includes("findFiles("), false);
     assert.strictEqual(source.includes("scanProject("), false);
     assert.strictEqual(source.includes("new ArchiveResourceStore"), false);

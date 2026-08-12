@@ -23,7 +23,8 @@ export interface ResourceInfrastructure extends vscode.Disposable {
  * after a real resource query, then owns disposal itself.
  */
 export function createResourceInfrastructure(): ResourceInfrastructure {
-  const projects = new ResourcePackProjectService(new VscodeResourcePackProjectHost());
+  const projectHost = new VscodeResourcePackProjectHost();
+  const projects = new ResourcePackProjectService(projectHost);
   const universe = new ResourceUniverseService();
   const navigation = new ResourceUniverseNavigationFacade(projects, universe);
   const archiveResources = new LazyVscodeArchiveResources(
@@ -51,11 +52,16 @@ export function createResourceInfrastructure(): ResourceInfrastructure {
     if (!affectsResourceResolutionConfiguration(event)) {
       return;
     }
+    projectHost.invalidateWorkspaceFolders();
     const folders = vscode.workspace.workspaceFolders ?? [];
     const projectIds = folders.length === 0
       ? projects.invalidateWorkspaceConfiguration()
       : folders.flatMap(folder => projects.invalidateWorkspaceConfiguration(folder.uri.toString()));
     invalidateProjects(projectIds);
+  }));
+  disposables.push(vscode.workspace.onDidChangeWorkspaceFolders(() => {
+    projectHost.invalidateWorkspaceFolders();
+    invalidateProjects(projects.invalidateWorkspaceConfiguration());
   }));
 
   const registration: ResourceInfrastructure = {

@@ -17,6 +17,7 @@ import type {
   ResourceUniverseNavigation,
   UnifiedResourceCoverage
 } from "../services/resourceUniverseNavigation";
+import { createLocationDocumentLoader } from "../utils/resourceLocationVscode";
 
 /** Main-extension endpoint for the LSP's server-to-client navigation request. */
 export async function resolveRsglResourceNavigation(
@@ -230,7 +231,10 @@ async function toProtocolLocations(
   locations: readonly ResourceLocation[],
   signal: AbortSignal
 ): Promise<RsglResourceNavigationLocationDto[]> {
-  const converted = await Promise.all(locations.map(location => toProtocolLocation(location, signal)));
+  const loadDocument = createLocationDocumentLoader();
+  const converted = await Promise.all(locations.map(location =>
+    toProtocolLocation(location, signal, loadDocument)
+  ));
   return [...new Map(converted.map(location => [[
     location.uri,
     location.range?.start.line ?? "",
@@ -242,15 +246,19 @@ async function toProtocolLocations(
 
 async function toProtocolLocation(
   location: ResourceLocation,
-  signal: AbortSignal
+  signal: AbortSignal,
+  loadDocument: ReturnType<typeof createLocationDocumentLoader>
 ): Promise<RsglResourceNavigationLocationDto> {
   throwIfAborted(signal, "Resource navigation was cancelled.");
   if (!location.range) {
     return { uri: location.uri, origin: location.origin };
   }
   try {
-    const document = await vscode.workspace.openTextDocument(vscode.Uri.parse(location.uri, true));
+    const document = await loadDocument(vscode.Uri.parse(location.uri, true));
     throwIfAborted(signal, "Resource navigation was cancelled.");
+    if (!document) {
+      return { uri: location.uri, origin: location.origin };
+    }
     const length = document.getText().length;
     return {
       uri: location.uri,

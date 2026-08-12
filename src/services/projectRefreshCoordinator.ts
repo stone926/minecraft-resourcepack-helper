@@ -25,6 +25,8 @@ type ResourceProjectRefreshStore = Pick<
   "resolveProject" | "getCachedContext" | "getRsglApplicability"
 >;
 
+const maximumPhysicalRefreshAttempts = 2;
+
 export interface DiscoveredResourceProject {
   readonly context?: ResourcePackProjectContextDto;
   readonly rsglApplicability?: RsglProjectApplicability;
@@ -80,17 +82,23 @@ export class ProjectRefreshCoordinator {
       || !coverage
       || coverage.status === "unavailable") {
       try {
-        // The physical provider scans the whole project. Keep this canonical
-        // scope aligned with coupled generated/physical refreshes.
-        const refresh = await this.universe.refreshProviderProject(
-          physicalProviderId,
-          context.projectId,
-          { projectId: context.projectId },
-          options.signal,
-          options.causeId
-        );
-        if (refresh.applied) {
-          this.refreshedContextRevisions.set(context.projectId, context.contextRevision);
+        for (let attempt = 0; attempt < maximumPhysicalRefreshAttempts; attempt++) {
+          // The physical provider scans the whole project. Keep this canonical
+          // scope aligned with coupled generated/physical refreshes.
+          const refresh = await this.universe.refreshProviderProject(
+            physicalProviderId,
+            context.projectId,
+            { projectId: context.projectId },
+            options.signal,
+            options.causeId
+          );
+          if (refresh.applied) {
+            this.refreshedContextRevisions.set(context.projectId, context.contextRevision);
+            break;
+          }
+          if (refresh.reason !== "staleGeneration" || options.signal?.aborted) {
+            break;
+          }
         }
       } catch (error) {
         if (!isAbortError(error) && !options.signal?.aborted) {

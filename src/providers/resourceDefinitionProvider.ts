@@ -3,7 +3,7 @@ import type { ResourceNavigationResult } from "../resourceUniverse";
 import type { ResourceUniverseNavigation } from "../services/resourceUniverseNavigation";
 import {
   cancellationTokenToAbortSignal,
-  toVscodeLocation
+  toVscodeLocations
 } from "../utils/resourceLocationVscode";
 import { findResourceReferenceAtPosition } from "../utils/resourceReferences";
 import { definitionLocationsForNavigation } from "./resourceDefinitionMapping";
@@ -42,8 +42,6 @@ async function toDefinitionLocations(
   token: vscode.CancellationToken
 ): Promise<vscode.Location[]> {
   const locations = definitionLocationsForNavigation(navigation, fallbackUri?.toString() ?? null);
-  const resolved = await Promise.all(locations.map(location =>
-    toVscodeLocation(location, token)
-  ));
+  const resolved = await toVscodeLocations(locations, token);
   return resolved.filter((location): location is vscode.Location => location !== undefined);
 }

@@ -21,6 +21,7 @@ export const resourceUniverseBenchmarkLimitations = Object.freeze([
   "The vscode-remote scenario uses a synthetic URI-only host. It does not claim a real SSH, WSL, or Dev Container Extension Host run.",
   "Project-service cold measurements create a new application cache but do not flush the operating-system filesystem cache.",
   "RSS is process-wide and includes the benchmark harness plus compiled module state; deltas are retained-heap observations, not isolated allocator totals.",
+  "Prepared resource-search measurements exclude project discovery, VS Code QuickPick rendering, and the ResourceSearchService response LRU.",
   "Windows drive/case behavior is measured only when process.platform is win32; other platforms record that portion as not applicable.",
   "ZIP measurements use the production in-memory central-directory API with on-demand reads and do not exercise VS Code filesystem-provider IPC."
 ]);
@@ -301,6 +302,58 @@ function benchmarkLargePackResourceUniverse(api, profile) {
     assertIncoming,
     profile.warmQueryPasses
   );
+  const searchInventory = snapshot.producers.map(producer => {
+    const target = producer.logicalKeys[0];
+    return {
+      target,
+      producer,
+      resolutionStatus: "resolved",
+      navigation: {
+        kind: "producer",
+        producerId: producer.producerId,
+        target
+      }
+    };
+  });
+  const preparedSearch = measureSynchronous(() => {
+    const prepared = api.prepareResourceSearchInventory(searchInventory);
+    assert.equal(prepared.size, searchInventory.length);
+    return prepared;
+  }, profile.snapshotConstructionIterations);
+  const searchResultLimit = 200;
+  const exactSearchQueries = keys
+    .slice(0, Math.ceil(keys.length / 2))
+    .map(target => target.id);
+  const broadSearchQueries = Array.from(
+    { length: Math.floor(keys.length / 2) },
+    () => "model_0"
+  );
+  const exactResourceSearch = measureSynchronousBatches(
+    exactSearchQueries,
+    profile.queryBatchSize,
+    query => {
+      const matches = api.searchPreparedResourceInventory(preparedSearch.result, {
+        query,
+        kinds: ["model"],
+        limit: searchResultLimit
+      });
+      assert.equal(matches.length, 1);
+      assert.equal(matches[0].id, query);
+    }
+  );
+  const broadResourceSearch = measureSynchronousBatches(
+    broadSearchQueries,
+    profile.queryBatchSize,
+    query => {
+      const matches = api.searchPreparedResourceInventory(preparedSearch.result, {
+        query,
+        kinds: ["model"],
+        limit: searchResultLimit
+      });
+      assert.equal(matches.length, Math.min(searchResultLimit, searchInventory.length));
+      assert.ok(matches.every(match => match.id.includes(query)));
+    }
+  );
   const rssAfterQueriesBytes = process.memoryUsage().rss;
 
   return scenario("large-pack-resource-universe", false, {
@@ -309,7 +362,10 @@ function benchmarkLargePackResourceUniverse(api, profile) {
     coldResolutionBatchMilliseconds: coldResolution.distribution,
     warmResolutionBatchMilliseconds: warmResolution.distribution,
     coldIncomingBatchMilliseconds: coldIncoming.distribution,
-    warmIncomingBatchMilliseconds: warmIncoming.distribution
+    warmIncomingBatchMilliseconds: warmIncoming.distribution,
+    resourceSearchPreparationMilliseconds: preparedSearch.distribution,
+    exactResourceSearchBatchMilliseconds: exactResourceSearch.distribution,
+    broadResourceSearchBatchMilliseconds: broadResourceSearch.distribution
   }, {
     physicalProducers: snapshot.producers.length,
     physicalEdges: snapshot.edges.length,
@@ -321,6 +377,12 @@ function benchmarkLargePackResourceUniverse(api, profile) {
     warmResolutionOperations: warmResolution.operationCount,
     coldIncomingOperations: coldIncoming.operationCount,
     warmIncomingOperations: warmIncoming.operationCount,
+    resourceSearchEntries: searchInventory.length,
+    resourceSearchPreparationIterations: profile.snapshotConstructionIterations,
+    resourceSearchResultLimit: searchResultLimit,
+    resourceSearchQueryBatchSize: profile.queryBatchSize,
+    exactResourceSearchOperations: exactResourceSearch.operationCount,
+    broadResourceSearchOperations: broadResourceSearch.operationCount,
     snapshotBytes,
     rssBeforeBytes,
     rssAfterSnapshotBytes,
@@ -339,7 +401,12 @@ function benchmarkLargePackResourceUniverse(api, profile) {
     replacementIsAtomicProviderProjectSnapshot: true,
     emittedContentIncluded: false,
     coldQueryDefinition: "first traversal of distinct logical keys after the final index replacement",
-    warmQueryDefinition: `${profile.warmQueryPasses} repeated traversals of the same logical keys`
+    warmQueryDefinition: `${profile.warmQueryPasses} repeated traversals of the same logical keys`,
+    preparedResourceSearchModel: true,
+    preparedInventoryReusedAcrossQueries: true,
+    resourceSearchKind: "model",
+    exactSearchWorkload: "one canonical resource id per query",
+    broadSearchWorkload: "a basename prefix matching at least the configured result limit"
   });
 }
 

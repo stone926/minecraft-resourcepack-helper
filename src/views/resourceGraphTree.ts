@@ -16,6 +16,7 @@ export class ResourceGraphTreeProvider implements vscode.TreeDataProvider<Resour
   private readonly onDidChangeTreeDataEmitter = new vscode.EventEmitter<ResourceGraphTreeItem | undefined | null | void>();
   private readonly onDidChangeFocusEmitter = new vscode.EventEmitter<boolean>();
   private readonly refreshDebouncer = createTrailingDebouncer();
+  private pendingInventoryInvalidation = false;
   private focusedResource: FocusedResourceIdentity | undefined;
   public readonly onDidChangeTreeData = this.onDidChangeTreeDataEmitter.event;
   public readonly onDidChangeFocus = this.onDidChangeFocusEmitter.event;
@@ -30,6 +31,7 @@ export class ResourceGraphTreeProvider implements vscode.TreeDataProvider<Resour
 
   public refresh(): void {
     this.refreshDebouncer.cancel();
+    this.pendingInventoryInvalidation = false;
     this.model.invalidate();
     this.onDidChangeTreeDataEmitter.fire();
   }
@@ -60,8 +62,11 @@ export class ResourceGraphTreeProvider implements vscode.TreeDataProvider<Resour
   }
 
   public refreshSoon(delay = 250, invalidateInventory = false): void {
+    this.pendingInventoryInvalidation ||= invalidateInventory;
     this.refreshDebouncer.schedule(() => {
-      if (invalidateInventory) {
+      const shouldInvalidateInventory = this.pendingInventoryInvalidation;
+      this.pendingInventoryInvalidation = false;
+      if (shouldInvalidateInventory) {
         this.model.invalidate();
       }
       this.onDidChangeTreeDataEmitter.fire();
@@ -70,6 +75,7 @@ export class ResourceGraphTreeProvider implements vscode.TreeDataProvider<Resour
 
   public dispose(): void {
     this.refreshDebouncer.cancel();
+    this.pendingInventoryInvalidation = false;
     this.focusedResource = undefined;
     this.onDidChangeFocusEmitter.dispose();
     this.onDidChangeTreeDataEmitter.dispose();

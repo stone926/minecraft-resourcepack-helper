@@ -13,7 +13,7 @@ describe("resource universe visible migration contract", () => {
 
     assert.ok(definition.includes("navigation.resolveReference(document, reference, {"));
     assert.ok(definition.includes("includeGenerated: true"));
-    assert.ok(definition.includes("toVscodeLocation(location, token)"));
+    assert.ok(definition.includes("toVscodeLocations(locations, token)"));
     assert.ok(locationBridge.includes("document.positionAt(location.range.start)"));
     assert.ok(definition.includes("definitionLocationsForNavigation"));
     assert.strictEqual(definition.includes("generateReferenceRedirectPath"), false);
@@ -71,6 +71,8 @@ describe("resource universe visible migration contract", () => {
     assert.ok(workspaceEvents.includes("resourceGraph.invalidatePath(uri, kind)"));
     assert.ok(graph.includes("this.navigation.invalidateUri"));
     assert.ok(infrastructure.includes("resourceProjectAnchorWatcherGlob"));
+    assert.ok(infrastructure.includes("projectHost.invalidateWorkspaceFolders()"));
+    assert.ok(infrastructure.includes("onDidChangeWorkspaceFolders"));
     assert.ok(infrastructure.includes("universe.removeProject(projectId)"));
   });
 

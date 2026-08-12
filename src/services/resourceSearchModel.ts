@@ -39,15 +39,27 @@ export interface PreparedResourceSearchInventoryEntry {
   readonly normalizedSourceUri: string;
 }
 
-export type PreparedResourceSearchInventory =
-  readonly PreparedResourceSearchInventoryEntry[];
+export interface PreparedResourceSearchInventory {
+  /** Entries are stable-sorted by canonical id once, outside the query hot path. */
+  readonly byKind: Readonly<Record<
+    ResourceSearchKind,
+    readonly PreparedResourceSearchInventoryEntry[]
+  >>;
+  readonly size: number;
+}
 
 export function prepareResourceSearchInventory(
   inventory: readonly ResourceSearchInventoryEntry[]
 ): PreparedResourceSearchInventory {
-  return inventory.flatMap(entry => {
+  const byKind: Record<ResourceSearchKind, PreparedResourceSearchInventoryEntry[]> = {
+    blockstate: [],
+    model: [],
+    texture: []
+  };
+  let size = 0;
+  for (const entry of inventory) {
     if (!isResourceSearchKind(entry.target.kind)) {
-      return [];
+      continue;
     }
     const kind = entry.target.kind;
     const id = entry.target.id;
@@ -55,7 +67,7 @@ export function prepareResourceSearchInventory(
     const sourceUri = entry.producer.sourceOrigins[0]?.uri
       ?? entry.producer.physicalOrigins[0]?.uri;
     const normalizedId = normalizeSearchText(id);
-    return [{
+    byKind[kind].push({
       match: {
         ...entry,
         kind,
@@ -69,8 +81,15 @@ export function prepareResourceSearchInventory(
       normalizedSegments: normalizedId.split(/[/:]/),
       normalizedOutputPath: normalizeSearchText(outputPath ?? ""),
       normalizedSourceUri: normalizeSearchText(sourceUri ?? "")
-    }];
-  });
+    });
+    size++;
+  }
+  for (const kind of resourceSearchKinds) {
+    byKind[kind].sort((left, right) =>
+      left.match.id.localeCompare(right.match.id, "en")
+    );
+  }
+  return { byKind, size };
 }
 
 export function searchResourceInventory(
@@ -88,26 +107,43 @@ export function searchPreparedResourceInventory(
   options: ResourceSearchQuery
 ): ResourceSearchMatch[] {
   const query = normalizeSearchText(options.query);
-  if (!query || options.limit <= 0) {
+  const limit = Math.floor(options.limit);
+  if (!query || limit <= 0 || Number.isNaN(limit)) {
     return [];
   }
   const kinds = new Set(options.kinds);
-  return inventory
-    .flatMap(entry => kinds.has(entry.match.kind)
-      ? [{
-          entry,
-          rank: rankEntry(entry, query)
-        }]
-      : [])
-    .filter(candidate => candidate.rank !== null)
-    .sort((left, right) =>
-      left.rank! - right.rank!
-      || resourceSearchKindPriority(left.entry.match.kind)
-        - resourceSearchKindPriority(right.entry.match.kind)
-      || left.entry.match.id.localeCompare(right.entry.match.id, "en")
-    )
-    .slice(0, Math.floor(options.limit))
-    .map(({ entry }) => entry.match);
+  const buckets = createResultBuckets();
+  for (const kind of resourceSearchKinds) {
+    if (!kinds.has(kind)) {
+      continue;
+    }
+    const kindPriority = resourceSearchKindPriority(kind);
+    for (const entry of inventory.byKind[kind]) {
+      const rank = rankEntry(entry, query);
+      if (rank === null) {
+        continue;
+      }
+      const bucket = buckets[rank][kindPriority];
+      // The final response cannot consume more than `limit` entries from one
+      // rank/kind bucket. Entries were sorted once during preparation, so the
+      // query path never allocates and sorts every match in a large pack.
+      if (bucket.length < limit) {
+        bucket.push(entry.match);
+      }
+    }
+  }
+
+  const matches: ResourceSearchMatch[] = [];
+  for (const ranked of buckets) {
+    for (const bucket of ranked) {
+      const remaining = limit - matches.length;
+      if (remaining <= 0) {
+        return matches;
+      }
+      matches.push(...bucket.slice(0, remaining));
+    }
+  }
+  return matches;
 }
 
 export function resourceSearchQueryKey(options: ResourceSearchQuery): string {
@@ -126,6 +162,12 @@ export function isResourceSearchKind(value: string): value is ResourceSearchKind
 function resourceSearchKindPriority(kind: string): number {
   const index = (resourceSearchKinds as readonly string[]).indexOf(kind);
   return index >= 0 ? index : resourceSearchKinds.length;
+}
+
+function createResultBuckets(): ResourceSearchMatch[][][] {
+  return Array.from({ length: 6 }, () =>
+    resourceSearchKinds.map(() => [] as ResourceSearchMatch[])
+  );
 }
 
 function rankEntry(entry: PreparedResourceSearchInventoryEntry, query: string): number | null {

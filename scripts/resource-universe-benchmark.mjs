@@ -202,6 +202,7 @@ async function loadCompiledBenchmarkApi(repositoryRoot) {
     resourceProjectNode: path.join(repositoryRoot, "out", "packages", "resource-project", "src", "node.js"),
     projectService: path.join(repositoryRoot, "out", "src", "resourceProject", "resourcePackProjectService.js"),
     universeIndex: path.join(repositoryRoot, "out", "src", "resourceUniverse", "core", "resourceUniverseIndex.js"),
+    resourceSearchModel: path.join(repositoryRoot, "out", "src", "services", "resourceSearchModel.js"),
     zipArchive: path.join(repositoryRoot, "out", "src", "resourceUniverse", "virtualFs", "zipArchive.js")
   });
   for (const fileName of Object.values(modulePaths)) {
@@ -211,7 +212,14 @@ async function loadCompiledBenchmarkApi(repositoryRoot) {
       );
     }
   }
-  const [resourceProjectCore, resourceProjectNode, projectService, universeIndex, zipArchive] =
+  const [
+    resourceProjectCore,
+    resourceProjectNode,
+    projectService,
+    universeIndex,
+    resourceSearchModel,
+    zipArchive
+  ] =
     await Promise.all(Object.values(modulePaths).map(importCommonJsModule));
   const api = Object.freeze({
     normalizeResourceProjectUri: requireFunction(resourceProjectCore, "normalizeResourceProjectUri"),
@@ -222,6 +230,14 @@ async function loadCompiledBenchmarkApi(repositoryRoot) {
     resourceProjectUriToNodePath: requireFunction(resourceProjectNode, "resourceProjectUriToNodePath"),
     ResourcePackProjectService: requireFunction(projectService, "ResourcePackProjectService"),
     ResourceUniverseIndex: requireFunction(universeIndex, "ResourceUniverseIndex"),
+    prepareResourceSearchInventory: requireFunction(
+      resourceSearchModel,
+      "prepareResourceSearchInventory"
+    ),
+    searchPreparedResourceInventory: requireFunction(
+      resourceSearchModel,
+      "searchPreparedResourceInventory"
+    ),
     ZipArchive: requireFunction(zipArchive, "ZipArchive")
   });
   const inputs = Object.freeze(Object.fromEntries(Object.entries(modulePaths).map(([name, fileName]) => [

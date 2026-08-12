@@ -292,7 +292,7 @@
   "Exclude {0}": "Exclude {0}",
   "Include {0}": "Include {0}",
   "Selected Resource": "Selected Resource",
-  "Some local or RSGL resources could not be indexed.": "Some local or RSGL resources could not be indexed.",
+  "Some resources could not be indexed.": "Some resources could not be indexed.",
   "Some resource results may be incomplete.": "Some resource results may be incomplete.",
   "Stale": "Stale",
   "The resource inventory is unavailable.": "The resource inventory is unavailable.",

@@ -80,6 +80,43 @@ describe("resource search model", () => {
     );
   });
 
+  it("keeps query-time work linear and returns the same ranked top results", () => {
+    const large = Array.from({ length: 1_000 }, (_, index) => entry(
+      index % 3 === 0 ? "blockstate" : index % 3 === 1 ? "model" : "texture",
+      `demo:block/stone_${String(999 - index).padStart(4, "0")}`,
+      "physical"
+    ));
+    const prepared = prepareResourceSearchInventory(large);
+    let idReads = 0;
+    for (const kind of ["blockstate", "model", "texture"] as const) {
+      for (const preparedEntry of prepared.byKind[kind]) {
+        const id = preparedEntry.match.id;
+        Object.defineProperty(preparedEntry.match, "id", {
+          configurable: true,
+          enumerable: true,
+          get: () => {
+            idReads++;
+            return id;
+          }
+        });
+      }
+    }
+
+    const matches = searchPreparedResourceInventory(prepared, {
+      query: "stone",
+      kinds: ["model", "blockstate", "texture"],
+      limit: 25
+    });
+
+    assert.strictEqual(idReads, 0, "queries should not compare and sort every matching id");
+    assert.strictEqual(matches.length, 25);
+    assert.ok(matches.every(match => match.kind === "blockstate"));
+    assert.deepStrictEqual(
+      matches.map(match => match.id),
+      [...matches.map(match => match.id)].sort((left, right) => left.localeCompare(right, "en"))
+    );
+  });
+
   it("keeps owner candidates on prepared matches", () => {
     const indexed = entry("model", "demo:block/conflicted", "generated");
     const alternative = entry("model", "demo:block/conflicted", "physical").producer;

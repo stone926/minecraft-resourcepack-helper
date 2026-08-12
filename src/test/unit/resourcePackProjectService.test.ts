@@ -356,6 +356,94 @@ describe("resource pack project service", () => {
       "file:///unrelated/assets/demo/models/other.json"
     ), []);
   });
+
+  it("rebuilds cached contexts after workspace configuration invalidation", async () => {
+    const workspace = "file:///workspace";
+    const pack = `${workspace}/pack`;
+    const source = `${pack}/assets/demo/models/block/example.json`;
+    const folders: ResourceProjectWorkspaceFolder[] = [{
+      uri: workspace,
+      configurationRevision: "settings-r1",
+      sharedConfiguration: sharedConfigurationFromSettings(
+        workspace,
+        "vanilla-a",
+        ["custom-a"]
+      )
+    }];
+    const host = new FakeProjectHost(folders);
+    host.setFile(source, "{}", "source-r1");
+    host.setFile(`${pack}/pack.mcmeta`, "{}", "pack-r1");
+    const service = new ResourcePackProjectService(host);
+    const first = await service.resolveProject(source);
+
+    folders[0] = {
+      uri: workspace,
+      configurationRevision: "settings-r2",
+      sharedConfiguration: sharedConfigurationFromSettings(
+        workspace,
+        "vanilla-b",
+        ["custom-b"]
+      )
+    };
+    assert.deepStrictEqual(
+      service.invalidateWorkspaceConfiguration(workspace),
+      [first.context?.projectId]
+    );
+    assert.strictEqual(service.getCachedContext(first.context?.projectId ?? "missing"), undefined);
+
+    const second = await service.resolveProject(source);
+    assert.deepStrictEqual(second.context?.externalLayers.map(layer => layer.rootUri), [
+      `${workspace}/custom-b`
+    ]);
+    assert.strictEqual(second.context?.vanillaLayer?.rootUri, `${workspace}/vanilla-b`);
+    assert.notStrictEqual(second.context?.contextRevision, first.context?.contextRevision);
+  });
+
+  it("does not publish a pending project discovered against stale workspace settings", async () => {
+    const workspace = "file:///workspace";
+    const pack = `${workspace}/pack`;
+    const source = `${pack}/assets/demo/models/block/example.json`;
+    const folders: ResourceProjectWorkspaceFolder[] = [{
+      uri: workspace,
+      configurationRevision: "settings-r1",
+      sharedConfiguration: sharedConfigurationFromSettings(workspace, undefined, ["custom-a"])
+    }];
+    let releaseFirstStat!: () => void;
+    const firstStat = new Promise<void>(resolve => {
+      releaseFirstStat = resolve;
+    });
+    let delayed = true;
+    const host = new FakeProjectHost(folders, async () => {
+      if (delayed) {
+        delayed = false;
+        await firstStat;
+      }
+    });
+    host.setFile(source, "{}", "source-r1");
+    host.setFile(`${pack}/pack.mcmeta`, "{}", "pack-r1");
+    const service = new ResourcePackProjectService(host);
+
+    const obsolete = service.resolveProject(source);
+    await Promise.resolve();
+    folders[0] = {
+      uri: workspace,
+      configurationRevision: "settings-r2",
+      sharedConfiguration: sharedConfigurationFromSettings(workspace, undefined, ["custom-b"])
+    };
+    service.invalidateWorkspaceConfiguration(workspace);
+    const current = service.resolveProject(source);
+    releaseFirstStat();
+
+    const [obsoleteResult, currentResult] = await Promise.all([obsolete, current]);
+    assert.deepStrictEqual(obsoleteResult.context?.externalLayers.map(layer => layer.rootUri), [
+      `${workspace}/custom-a`
+    ]);
+    assert.deepStrictEqual(currentResult.context?.externalLayers.map(layer => layer.rootUri), [
+      `${workspace}/custom-b`
+    ]);
+    assert.strictEqual(await service.resolveProject(source), currentResult);
+    assert.strictEqual(service.getCachedContext(currentResult.context?.projectId ?? "missing"), currentResult.context);
+  });
 });
 
 class FakeProjectHost implements ResourcePackProjectServiceHost {
@@ -364,7 +452,10 @@ class FakeProjectHost implements ResourcePackProjectServiceHost {
   public readonly statCalls: string[] = [];
   public workspaceScans = 0;
 
-  public constructor(private readonly workspaces: ResourceProjectWorkspaceFolder[]) {
+  public constructor(
+    private readonly workspaces: ResourceProjectWorkspaceFolder[],
+    private readonly beforeStat?: () => Promise<void>
+  ) {
     for (const workspace of workspaces) {
       this.addDirectory(workspace.uri);
     }
@@ -380,6 +471,7 @@ class FakeProjectHost implements ResourcePackProjectServiceHost {
   }
 
   public async stat(uriValue: SerializedResourceUri): Promise<ResourceProjectFileType | null> {
+    await this.beforeStat?.();
     const uri = normalizeResourceProjectUri(uriValue);
     this.statCalls.push(uri);
     const identity = resourceProjectUriIdentity(uri);
