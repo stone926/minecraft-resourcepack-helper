@@ -249,6 +249,45 @@ describe("RSGL language service", () => {
     }
   });
 
+  it("preserves named-import record types through loop hover inference", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "mc-resourcepack-helper-rsgl-import-hover-"));
+    try {
+      const mainFile = path.join(root, "main.rsgl");
+      const familiesFile = path.join(root, "families.rsgl");
+      const mainText = [
+        "import { slabFamilies } from \"./families.rsgl\"",
+        "for family in slabFamilies {",
+        "  let customAssets = has(family, \"customAssets\") ? family.customAssets : true",
+        "}"
+      ].join("\n");
+      fs.writeFileSync(mainFile, mainText);
+      fs.writeFileSync(familiesFile, [
+        "type ShapeFamily = { customAssets?: Boolean }",
+        "let slabFamilies: List<ShapeFamily> = []",
+        "export { slabFamilies }"
+      ].join("\n"));
+
+      const cache = RsglWorkspaceSemanticCache.create();
+      const document = { fileName: mainFile, getText: () => mainText };
+      const familyOffset = mainText.indexOf("family in slabFamilies");
+      const customAssetsOffset = mainText.indexOf("customAssets =");
+
+      assert.deepStrictEqual(getRsglDocumentHoverInfo(document, familyOffset + 1, cache), {
+        range: { start: familyOffset, end: familyOffset + "family".length },
+        label: "variable family: { customAssets?: Boolean }"
+      });
+      assert.deepStrictEqual(getRsglDocumentHoverInfo(document, customAssetsOffset + 1, cache), {
+        range: {
+          start: customAssetsOffset,
+          end: customAssetsOffset + "customAssets".length
+        },
+        label: "variable customAssets: Boolean"
+      });
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("offers semantic tooling for locally inferred function values", () => {
     const text = [
       "let identity = (value) => value",

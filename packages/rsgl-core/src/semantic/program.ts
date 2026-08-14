@@ -19,6 +19,12 @@ import { rsglTypeKey } from "./typeNormalization";
 import { templateOutputMetadataFingerprint } from "../templateOutput";
 import { originalRsglSymbolDefinition } from "./symbolDefinition";
 import { RsglModuleNamespaceCycleStabilizer } from "./moduleNamespaceStabilization";
+import { cyclicImportComponentByFile } from "./importCycleAnalysis";
+import { RsglImportGraphIndex } from "./importGraphIndex";
+import {
+  createRsglValueImportEnvironment,
+  valueImportBindingsEqual
+} from "./valueImportStabilization";
 import {
   RsglBindOptions,
   RsglFileDiagnostic,
@@ -35,12 +41,13 @@ export function bindRsglProgram(files: RsglSourceFile[], options: RsglBindOption
   const sourceFiles = includeRsglStdlibSourceFiles(files, { stdlibRoot: options.stdlibRoot });
   const resolver = options.resolver ?? createDefaultResolver(sourceFiles);
   let models = sourceFiles.map(file => bindRsglModule(file.module, { ...options, fileName: file.fileName, resolver }));
-  let importGraph = buildImportGraph(sourceFiles, models, resolver);
+  const importGraph = buildImportGraph(sourceFiles, models, resolver);
+  const importGraphIndex = new RsglImportGraphIndex(importGraph);
   const typeAliases = createRsglProgramTypeAliasEnvironment(sourceFiles, importGraph);
   let typeOnlyImports = typeOnlyImportNamesByFile(
     models,
-    importGraph,
-    createRsglExportMaps(models, importGraph).maps,
+    createRsglExportMaps(models, importGraph, importGraphIndex).maps,
+    importGraphIndex,
     typeAliases.exportMaps
   );
   if (Array.from(typeAliases.importsByFile.values()).some(imports => imports.size > 0)) {
@@ -53,11 +60,10 @@ export function bindRsglProgram(files: RsglSourceFile[], options: RsglBindOption
         prelinkedTypeAliases: typeAliases.importsByFile.get(rsglPathKey(file.fileName)),
         typeOnlyImportNames: typeOnlyImports.get(rsglPathKey(file.fileName))
       }));
-      importGraph = buildImportGraph(sourceFiles, models, resolver);
       const next = typeOnlyImportNamesByFile(
         models,
-        importGraph,
-        createRsglExportMaps(models, importGraph).maps,
+        createRsglExportMaps(models, importGraph, importGraphIndex).maps,
+        importGraphIndex,
         typeAliases.exportMaps
       );
       if (sameNameSets(typeOnlyImports, next)) {
@@ -68,37 +74,96 @@ export function bindRsglProgram(files: RsglSourceFile[], options: RsglBindOption
   }
 
   let namespaceInferenceDiagnostics: readonly RsglFileDiagnostic[] = [];
-  if (models.some(model => model.imports.some(record => Boolean(record.namespaceName)))) {
-    // Seed from a complete named/bare-import link so re-exported templates are
-    // categorized by final metadata rather than provisional Any.
-    linkProgramSymbols(models, importGraph, typeAliases.exportMaps);
-    let namespaces = moduleNamespaceTypesByFile(models, importGraph);
-    const namespaceCycleStabilizer = new RsglModuleNamespaceCycleStabilizer(models, importGraph);
-    const maximumPasses = Math.max(4, sourceFiles.length * 4 + importGraph.edges.length * 2);
+  const hasNamespaceImports = models.some(model =>
+    model.imports.some(record => Boolean(record.namespaceName))
+  );
+  const hasValueImports = models.some(model =>
+    model.imports.some(record => Boolean(record.importAll || record.namedImports.length > 0))
+  );
+  if (hasNamespaceImports || hasValueImports) {
+    // Imported values must be available before expression binding. A final
+    // symbol-only link leaves loop variables, locals, and collection inference
+    // frozen at their provisional Any types.
+    linkProgramSymbols(models, importGraph, importGraphIndex, typeAliases.exportMaps);
+    let namespaces = moduleNamespaceTypesByFile(models, importGraph, importGraphIndex);
+    const cyclicValueComponents = cyclicImportComponentByFile(importGraph);
+    let valueImports = createRsglValueImportEnvironment(models, cyclicValueComponents);
+    const namespaceCycleStabilizer = hasNamespaceImports
+      ? new RsglModuleNamespaceCycleStabilizer(models, importGraph)
+      : undefined;
+    const baseMaximumPasses = Math.max(
+      4,
+      sourceFiles.length * 4 + importGraph.edges.length * 2
+    );
+    const maximumPasses = baseMaximumPasses
+      + (namespaceCycleStabilizer?.additionalPassBudget() ?? 0);
+    let changedInputFiles = filesNeedingSemanticRebind(
+      sourceFiles,
+      valueImports,
+      namespaces
+    );
+    let dirtyFiles = includeCyclicComponentFiles(
+      changedInputFiles,
+      cyclicValueComponents
+    );
     for (let pass = 0; pass < maximumPasses; pass++) {
-      models = sourceFiles.map(file => bindRsglModule(file.module, {
-        ...options,
-        fileName: file.fileName,
-        resolver,
-        prelinkedTypeAliases: typeAliases.importsByFile.get(rsglPathKey(file.fileName)),
-        typeOnlyImportNames: typeOnlyImports.get(rsglPathKey(file.fileName)),
-        prelinkedModuleNamespaces: namespaces.get(rsglPathKey(file.fileName))
-      }));
-      importGraph = buildImportGraph(sourceFiles, models, resolver);
-      linkProgramSymbols(models, importGraph, typeAliases.exportMaps);
-      const next = namespaceCycleStabilizer.stabilize(
-        pass + 1,
-        namespaces,
-        moduleNamespaceTypesByFile(models, importGraph)
+      models = sourceFiles.map((file, index) => {
+        const fileKey = rsglPathKey(file.fileName);
+        if (!dirtyFiles.has(fileKey)) {
+          return models[index];
+        }
+        const prelinkedValueImports = valueImports.get(fileKey);
+        const prelinkedModuleNamespaces = namespaces.get(fileKey);
+        return bindRsglModule(file.module, {
+          ...options,
+          fileName: file.fileName,
+          resolver,
+          prelinkedTypeAliases: typeAliases.importsByFile.get(fileKey),
+          typeOnlyImportNames: typeOnlyImports.get(fileKey),
+          prelinkedValueImports,
+          prelinkedModuleNamespaces
+        });
+      });
+      linkProgramSymbols(models, importGraph, importGraphIndex, typeAliases.exportMaps);
+      const nextNamespacesRaw = moduleNamespaceTypesByFile(
+        models,
+        importGraph,
+        importGraphIndex
       );
-      if (moduleNamespaceEnvironmentsEqual(namespaces, next)) {
+      const nextNamespaces = namespaceCycleStabilizer
+        ? namespaceCycleStabilizer.stabilize(
+            namespaces,
+            nextNamespacesRaw,
+            changedInputFiles
+          )
+        : nextNamespacesRaw;
+      const nextValueImports = createRsglValueImportEnvironment(models, cyclicValueComponents);
+      const nextChangedInputFiles = filesWithChangedSemanticInputs(
+        sourceFiles,
+        valueImports,
+        nextValueImports,
+        namespaces,
+        nextNamespaces
+      );
+      if (nextChangedInputFiles.size === 0) {
         break;
       }
-      namespaces = next;
+      changedInputFiles = nextChangedInputFiles;
+      dirtyFiles = includeCyclicComponentFiles(
+        changedInputFiles,
+        cyclicValueComponents
+      );
+      namespaces = nextNamespaces;
+      valueImports = nextValueImports;
     }
-    namespaceInferenceDiagnostics = namespaceCycleStabilizer.diagnostics();
+    namespaceInferenceDiagnostics = namespaceCycleStabilizer?.diagnostics() ?? [];
   }
-  const linkedSymbols = linkProgramSymbols(models, importGraph, typeAliases.exportMaps);
+  const linkedSymbols = linkProgramSymbols(
+    models,
+    importGraph,
+    importGraphIndex,
+    typeAliases.exportMaps
+  );
   for (const model of models) {
     model.diagnostics = model.diagnostics.filter(diagnostic => !templateOutputDiagnosticCodes.has(diagnostic.code));
   }
@@ -166,16 +231,17 @@ interface ImportLinkPassResult {
 function linkProgramSymbols(
   models: RsglSemanticModel[],
   importGraph: RsglImportGraph,
+  importGraphIndex: RsglImportGraphIndex,
   typeAliasExportMaps: ReadonlyMap<string, ReadonlyMap<string, unknown>>
 ): LinkedProgramSymbols {
   const importAllBindings = new Map<RsglSemanticModel, Map<string, ImportAllBinding>>();
   const maxPasses = Math.max(4, models.length * 4 + importGraph.edges.length * 2);
 
   for (let pass = 0; pass < maxPasses; pass++) {
-    const exports = createRsglExportMaps(models, importGraph);
+    const exports = createRsglExportMaps(models, importGraph, importGraphIndex);
     const imports = resolveProgramImports(
       models,
-      importGraph,
+      importGraphIndex,
       exports.maps,
       importAllBindings,
       typeAliasExportMaps
@@ -191,10 +257,10 @@ function linkProgramSymbols(
 
   // Import cycles are diagnosed separately. Recompute once so the returned
   // diagnostics/maps describe the latest bounded link state.
-  const exports = createRsglExportMaps(models, importGraph);
+  const exports = createRsglExportMaps(models, importGraph, importGraphIndex);
   const imports = resolveProgramImports(
     models,
-    importGraph,
+    importGraphIndex,
     exports.maps,
     importAllBindings,
     typeAliasExportMaps
@@ -208,7 +274,7 @@ function linkProgramSymbols(
 
 function resolveProgramImports(
   models: RsglSemanticModel[],
-  importGraph: RsglImportGraph,
+  importGraphIndex: RsglImportGraphIndex,
   exportMaps: Map<string, Map<string, RsglSymbol>>,
   importAllBindings: Map<RsglSemanticModel, Map<string, ImportAllBinding>>,
   typeAliasExportMaps: ReadonlyMap<string, ReadonlyMap<string, unknown>>
@@ -221,11 +287,10 @@ function resolveProgramImports(
     const trackedBindings = importAllBindings.get(sourceModel) ?? new Map<string, ImportAllBinding>();
     importAllBindings.set(sourceModel, trackedBindings);
     for (const [recordRank, record] of sourceModel.imports.entries()) {
-      const currentFile = rsglPathKey(sourceModel.fileName);
-      const edge = importGraph.edges.find(item =>
-        rsglPathKey(item.from) === currentFile
-        && item.source === record.source
-        && rsglPathKey(record.resolvedFileName ?? item.to) === rsglPathKey(item.to)
+      const edge = importGraphIndex.resolve(
+        sourceModel.fileName,
+        record.source,
+        record.resolvedFileName
       );
       const targetModel = edge ? modelsByFile.get(rsglPathKey(edge.to)) : undefined;
       if (!targetModel) {
@@ -234,7 +299,7 @@ function resolveProgramImports(
 
       if (record.namespaceName) {
         const localSymbol = sourceModel.scope.symbols.get(record.namespaceName);
-        if (localSymbol?.kind === "namespace") {
+        if (localSymbol?.kind === "namespace" && localSymbol.node === record.node) {
           const namespaceType = createModuleNamespaceType(
             targetModel.fileName,
             exportMaps.get(rsglPathKey(targetModel.fileName)) ?? new Map(),
@@ -263,6 +328,9 @@ function resolveProgramImports(
           continue;
         }
         if (localSymbol) {
+          if (localSymbol.kind === "import" && localSymbol.importBinding?.kind === "named") {
+            localSymbol.importBinding = { kind: "named", sourceFile: targetModel.fileName };
+          }
           changed = updateLinkedSymbol(localSymbol, exported) || changed;
         }
       }
@@ -273,6 +341,11 @@ function resolveProgramImports(
           const tracked = trackedBindings.get(name);
           if (tracked) {
             if (recordRank <= tracked.ownerRank) {
+              changed = updateBareImportOwner(
+                tracked.symbol,
+                targetModel.fileName,
+                record.node.source?.range
+              ) || changed;
               if (recordRank < tracked.ownerRank) {
                 tracked.ownerRank = recordRank;
                 changed = true;
@@ -282,12 +355,25 @@ function resolveProgramImports(
             }
             continue;
           }
-          if (sourceModel.scope.symbols.has(name)) {
+          const existing = sourceModel.scope.symbols.get(name);
+          if (existing?.kind === "import" && existing.importBinding?.kind === "all") {
+            changed = updateBareImportOwner(
+              existing,
+              targetModel.fileName,
+              record.node.source?.range
+            ) || changed;
+            trackedBindings.set(name, { symbol: existing, ownerRank: recordRank });
+            changed = updateLinkedSymbol(existing, exported) || changed;
+            importedNames.add(name);
+            continue;
+          }
+          if (existing) {
             continue;
           }
           const symbol: RsglSymbol = {
             name,
             kind: "import",
+            importBinding: { kind: "all", sourceFile: targetModel.fileName },
             type: exported.type,
             node: exported.node,
             range: record.node.source?.range,
@@ -334,11 +420,27 @@ function updateLinkedSymbol(local: RsglSymbol, exported: RsglSymbol): boolean {
   return changed;
 }
 
+function updateBareImportOwner(
+  symbol: RsglSymbol,
+  sourceFile: string,
+  range: RsglSymbol["range"]
+): boolean {
+  const previousRange = symbol.range;
+  const changed = symbol.importBinding?.kind !== "all"
+    || symbol.importBinding.sourceFile !== sourceFile
+    || previousRange?.start !== range?.start
+    || previousRange?.end !== range?.end;
+  symbol.importBinding = { kind: "all", sourceFile };
+  symbol.range = range;
+  return changed;
+}
+
 function moduleNamespaceTypesByFile(
   models: readonly RsglSemanticModel[],
-  importGraph: RsglImportGraph
+  importGraph: RsglImportGraph,
+  importGraphIndex: RsglImportGraphIndex
 ): Map<string, Map<string, RsglType>> {
-  const exports = createRsglExportMaps([...models], importGraph).maps;
+  const exports = createRsglExportMaps([...models], importGraph, importGraphIndex).maps;
   const result = new Map<string, Map<string, RsglType>>();
   for (const model of models) {
     const fileName = rsglPathKey(model.fileName);
@@ -348,10 +450,14 @@ function moduleNamespaceTypesByFile(
       if (!record.namespaceName || namespaces.has(record.namespaceName)) {
         continue;
       }
-      const edge = importGraph.edges.find(candidate =>
-        rsglPathKey(candidate.from) === fileName
-        && candidate.source === record.source
-        && rsglPathKey(record.resolvedFileName ?? candidate.to) === rsglPathKey(candidate.to)
+      const localSymbol = model.scope.symbols.get(record.namespaceName);
+      if (localSymbol?.kind !== "namespace" || localSymbol.node !== record.node) {
+        continue;
+      }
+      const edge = importGraphIndex.resolve(
+        model.fileName,
+        record.source,
+        record.resolvedFileName
       );
       if (!edge) {
         continue;
@@ -366,26 +472,72 @@ function moduleNamespaceTypesByFile(
   return result;
 }
 
-function moduleNamespaceEnvironmentsEqual(
-  left: ReadonlyMap<string, ReadonlyMap<string, RsglType>>,
-  right: ReadonlyMap<string, ReadonlyMap<string, RsglType>>
+function moduleNamespaceBindingsEqual(
+  left: ReadonlyMap<string, RsglType> | undefined,
+  right: ReadonlyMap<string, RsglType> | undefined
 ): boolean {
-  if (left.size !== right.size) {
+  const leftSize = left?.size ?? 0;
+  const rightSize = right?.size ?? 0;
+  if (leftSize !== rightSize) {
     return false;
   }
-  for (const [fileName, leftNamespaces] of left) {
-    const rightNamespaces = right.get(fileName);
-    if (!rightNamespaces || leftNamespaces.size !== rightNamespaces.size) {
+  if (!leftSize) {
+    return true;
+  }
+  if (!left || !right) {
+    return false;
+  }
+  for (const [name, leftType] of left) {
+    const rightType = right.get(name);
+    if (!rightType || !sameModuleNamespaceType(leftType, rightType)) {
       return false;
-    }
-    for (const [name, leftType] of leftNamespaces) {
-      const rightType = rightNamespaces.get(name);
-      if (!rightType || !sameModuleNamespaceType(leftType, rightType)) {
-        return false;
-      }
     }
   }
   return true;
+}
+
+function filesNeedingSemanticRebind(
+  files: readonly RsglSourceFile[],
+  valueImports: ReadonlyMap<string, ReadonlyMap<string, RsglSymbol>>,
+  namespaces: ReadonlyMap<string, ReadonlyMap<string, RsglType>>
+): Set<string> {
+  return new Set(files
+    .map(file => rsglPathKey(file.fileName))
+    .filter(fileName =>
+      Boolean(valueImports.get(fileName)?.size)
+      || Boolean(namespaces.get(fileName)?.size)
+    ));
+}
+
+function filesWithChangedSemanticInputs(
+  files: readonly RsglSourceFile[],
+  previousValueImports: ReadonlyMap<string, ReadonlyMap<string, RsglSymbol>>,
+  nextValueImports: ReadonlyMap<string, ReadonlyMap<string, RsglSymbol>>,
+  previousNamespaces: ReadonlyMap<string, ReadonlyMap<string, RsglType>>,
+  nextNamespaces: ReadonlyMap<string, ReadonlyMap<string, RsglType>>
+): Set<string> {
+  return new Set(files
+    .map(file => rsglPathKey(file.fileName))
+    .filter(fileName =>
+      !valueImportBindingsEqual(
+        previousValueImports.get(fileName),
+        nextValueImports.get(fileName)
+      )
+      || !moduleNamespaceBindingsEqual(
+        previousNamespaces.get(fileName),
+        nextNamespaces.get(fileName)
+      )
+    ));
+}
+
+function includeCyclicComponentFiles(
+  changedInputFiles: ReadonlySet<string>,
+  cyclicComponentByFile: ReadonlyMap<string, string>
+): Set<string> {
+  return new Set([
+    ...changedInputFiles,
+    ...cyclicComponentByFile.keys()
+  ]);
 }
 
 function sameModuleNamespaceType(left: RsglType, right: RsglType): boolean {
@@ -440,8 +592,8 @@ function sourceFileForSymbol(
 
 function typeOnlyImportNamesByFile(
   models: readonly RsglSemanticModel[],
-  importGraph: RsglImportGraph,
   valueExportMaps: ReadonlyMap<string, ReadonlyMap<string, RsglSymbol>>,
+  importGraphIndex: RsglImportGraphIndex,
   typeExportMaps: ReadonlyMap<string, ReadonlyMap<string, unknown>>
 ): Map<string, Set<string>> {
   const result = new Map<string, Set<string>>();
@@ -449,8 +601,10 @@ function typeOnlyImportNamesByFile(
     const fileName = rsglPathKey(model.fileName);
     const names = new Set<string>();
     for (const record of model.imports) {
-      const edge = importGraph.edges.find(candidate =>
-        rsglPathKey(candidate.from) === fileName && candidate.source === record.source
+      const edge = importGraphIndex.resolve(
+        model.fileName,
+        record.source,
+        record.resolvedFileName
       );
       if (!edge) {
         continue;

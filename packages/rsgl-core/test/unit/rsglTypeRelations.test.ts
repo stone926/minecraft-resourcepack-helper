@@ -56,6 +56,25 @@ describe("RSGL structural type relations", () => {
     assert.deepStrictEqual(normalizeRsglType(first), normalizeRsglType(second));
   });
 
+  it("absorbs scalar literals only when their broad type is present", () => {
+    assert.strictEqual(formatType(combineRsglTypes([
+      { kind: "Boolean" },
+      { kind: "Boolean", literalValue: true }
+    ])), "Boolean");
+    assert.strictEqual(formatType(combineRsglTypes([
+      { kind: "String", literalValue: "one" },
+      { kind: "String" }
+    ])), "String");
+    assert.strictEqual(formatType(combineRsglTypes([
+      { kind: "Number" },
+      { kind: "Number", literalValue: 1 }
+    ])), "Number");
+    assert.strictEqual(formatType(combineRsglTypes([
+      { kind: "Boolean", literalValue: false },
+      { kind: "Boolean", literalValue: true }
+    ])), "false | true");
+  });
+
   it("compares nested list, object, and union types recursively", () => {
     const expected: RsglType = objectType({
       items: {

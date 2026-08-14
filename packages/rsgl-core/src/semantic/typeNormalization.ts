@@ -1,6 +1,7 @@
 import { uniqueValues } from "../../../mc-assets/src";
 import {
   anyType,
+  hasLiteralValue,
   jsonType,
   missingType,
   neverType,
@@ -70,8 +71,8 @@ export function normalizeRsglType(type: RsglType): RsglType {
 
 /**
  * Flattens, recursively normalizes, structurally deduplicates, and sorts a
- * group of possible types. `Any` and `Unknown` retain their existing wildcard
- * semantics and therefore absorb a union that contains them.
+ * group of possible types. Broad scalar types absorb their literal subtypes;
+ * `Any` and `Unknown` retain their wildcard semantics and absorb the union.
  */
 export function combineRsglTypes(
   types: readonly RsglType[],
@@ -98,22 +99,31 @@ export function combineRsglTypes(
       ? { ...unknownType, explicitAnnotation: true }
       : unknownType;
   }
-  const present = flattened.filter(type => type.kind !== "Never");
-  if (present.length === 0) {
+  const nonBottom = flattened.filter(type => type.kind !== "Never");
+  if (nonBottom.length === 0) {
     return inheritedExplicitAnnotation
       ? { ...neverType, explicitAnnotation: true }
       : neverType;
   }
-  if (present.some(type => type.kind === "Any")) {
+  if (nonBottom.some(type => type.kind === "Any")) {
     return inheritedExplicitAnnotation
       ? { ...anyType, explicitAnnotation: true }
       : anyType;
   }
-  if (present.some(type => type.kind === "Unknown")) {
+  if (nonBottom.some(type => type.kind === "Unknown")) {
     return inheritedExplicitAnnotation
       ? { ...unknownType, explicitAnnotation: true }
       : unknownType;
   }
+
+  const broadScalarKinds = new Set(
+    nonBottom
+      .filter(type => isScalarKind(type.kind) && !hasLiteralValue(type))
+      .map(type => type.kind)
+  );
+  const present = nonBottom.filter(type =>
+    !hasLiteralValue(type) || !broadScalarKinds.has(type.kind)
+  );
 
   const unique = new Map<string, RsglType>();
   for (const type of present) {

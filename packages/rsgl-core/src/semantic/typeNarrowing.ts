@@ -5,11 +5,15 @@ import { createChildScope, lookup } from "./scopes";
 import type { RsglObjectProperty, RsglScope, RsglType } from "./types";
 
 /**
- * Creates a true-branch scope for explicit presence checks. No truthiness
- * expression other than the pure `has(object, "field")` builtin narrows an
- * optional field, because valid present values may themselves be falsy.
+ * Creates a true-branch scope for explicit presence checks. A true conjunction
+ * carries the facts proven by both operands; no other truthiness
+ * expression narrows an optional field because present values may be falsy.
  */
 export function scopeForTruthyCondition(scope: RsglScope, condition: ExprNode): RsglScope {
+  if (condition.kind === "BinaryExpr" && condition.operator === "&&") {
+    const leftScope = scopeForTruthyCondition(scope, condition.left);
+    return scopeForTruthyCondition(leftScope, condition.right);
+  }
   const target = hasConditionTarget(condition, scope);
   if (!target) {
     return scope;

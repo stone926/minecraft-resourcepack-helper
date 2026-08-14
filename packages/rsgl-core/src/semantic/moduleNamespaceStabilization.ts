@@ -1,6 +1,11 @@
 import type { TextRange } from "../parser";
 import { rsglPathKey } from "../pathIdentity";
 import { fileDiagnostic } from "./diagnostics";
+import { RsglImportGraphIndex } from "./importGraphIndex";
+import {
+  isCyclicImportComponent,
+  stronglyConnectedImportComponents
+} from "./importCycleAnalysis";
 import { rsglTypeKey } from "./typeNormalization";
 import type {
   RsglFileDiagnostic,
@@ -16,11 +21,16 @@ export type RsglModuleNamespaceEnvironment = Map<string, Map<string, RsglType>>;
 
 interface NamespaceImportEdge {
   from: string;
-  to: string;
+  componentId: string;
   fileName: string;
   alias: string;
   range: TextRange;
-  componentSize: number;
+  settlingPasses: number;
+}
+
+interface ImportComponentDependencyGraph {
+  componentByFile: ReadonlyMap<string, string>;
+  importersByComponent: ReadonlyMap<string, ReadonlySet<string>>;
 }
 
 /**
@@ -32,23 +42,31 @@ interface NamespaceImportEdge {
 export class RsglModuleNamespaceCycleStabilizer {
   private readonly cyclicEdges: NamespaceImportEdge[];
   private readonly lockedMembers = new Map<string, Map<string, Set<string>>>();
+  private readonly changingPasses = new Map<string, Map<string, Map<string, number>>>();
   private readonly reportedMembers = new Set<string>();
   private readonly collectedDiagnostics: RsglFileDiagnostic[] = [];
+  private readonly componentDependencies: ImportComponentDependencyGraph;
+  private readonly settlingPassBudget: number;
 
   public constructor(
     models: readonly RsglSemanticModel[],
     importGraph: RsglImportGraph
   ) {
     const components = stronglyConnectedImportComponents(importGraph);
+    this.componentDependencies = createImportComponentDependencyGraph(components, importGraph);
+    const importGraphIndex = new RsglImportGraphIndex(importGraph);
     const componentByFile = new Map<string, readonly string[]>();
+    let settlingPassBudget = 0;
     for (const component of components) {
-      if (!isCyclicComponent(component, importGraph)) {
+      if (!isCyclicImportComponent(component, importGraph)) {
         continue;
       }
+      settlingPassBudget += Math.max(8, component.length * 2 + 2);
       for (const fileName of component) {
         componentByFile.set(fileName, component);
       }
     }
+    this.settlingPassBudget = settlingPassBudget;
 
     const edges: NamespaceImportEdge[] = [];
     for (const model of models) {
@@ -57,10 +75,14 @@ export class RsglModuleNamespaceCycleStabilizer {
         if (!record.namespaceName) {
           continue;
         }
-        const edge = importGraph.edges.find(candidate =>
-          rsglPathKey(candidate.from) === from
-          && candidate.source === record.source
-          && rsglPathKey(record.resolvedFileName ?? candidate.to) === rsglPathKey(candidate.to)
+        const namespaceSymbol = model.scope.symbols.get(record.namespaceName);
+        if (namespaceSymbol?.kind !== "namespace" || namespaceSymbol.node !== record.node) {
+          continue;
+        }
+        const edge = importGraphIndex.resolve(
+          model.fileName,
+          record.source,
+          record.resolvedFileName
         );
         const component = edge ? componentByFile.get(from) : undefined;
         const targetKey = edge ? rsglPathKey(edge.to) : undefined;
@@ -69,11 +91,11 @@ export class RsglModuleNamespaceCycleStabilizer {
         }
         edges.push({
           from,
-          to: targetKey,
+          componentId: component[0],
           fileName: model.fileName,
           alias: record.namespaceName,
           range: record.node.namespaceName?.range ?? record.node.range,
-          componentSize: component.length
+          settlingPasses: Math.max(8, component.length * 2 + 2)
         });
       }
     }
@@ -81,13 +103,17 @@ export class RsglModuleNamespaceCycleStabilizer {
   }
 
   public stabilize(
-    completedPasses: number,
     previous: RsglModuleNamespaceEnvironment,
-    next: RsglModuleNamespaceEnvironment
+    next: RsglModuleNamespaceEnvironment,
+    pendingInputFiles: ReadonlySet<string>
   ): RsglModuleNamespaceEnvironment {
+    const componentsWithPendingDependencies = componentsDependingOnPendingFiles(
+      pendingInputFiles,
+      this.componentDependencies
+    );
     for (const edge of this.cyclicEdges) {
-      const settlingPasses = Math.max(8, edge.componentSize * 2 + 2);
-      if (completedPasses < settlingPasses) {
+      if (componentsWithPendingDependencies.has(edge.componentId)) {
+        this.resetChangingPasses(edge);
         continue;
       }
       const previousType = previous.get(edge.from)?.get(edge.alias);
@@ -96,12 +122,22 @@ export class RsglModuleNamespaceCycleStabilizer {
         continue;
       }
       for (const [name, nextMember] of nextType.moduleNamespaceMembers ?? []) {
+        if (this.lockedMembers.get(edge.from)?.get(edge.alias)?.has(name)) {
+          continue;
+        }
         const previousMember = previousType.moduleNamespaceMembers?.get(name);
         if (
           nextMember.category !== "value"
           || previousMember?.category !== "value"
-          || valueMemberTypeFingerprint(previousMember) === valueMemberTypeFingerprint(nextMember)
         ) {
+          this.resetChangingPasses(edge, name);
+          continue;
+        }
+        if (valueMemberTypeFingerprint(previousMember) === valueMemberTypeFingerprint(nextMember)) {
+          this.resetChangingPasses(edge, name);
+          continue;
+        }
+        if (this.incrementChangingPasses(edge, name) < edge.settlingPasses) {
           continue;
         }
         this.lockMember(edge.from, edge.alias, name);
@@ -120,6 +156,11 @@ export class RsglModuleNamespaceCycleStabilizer {
     return this.applyLocks(next);
   }
 
+  /** Extra cap headroom for cyclic components that may settle serially. */
+  public additionalPassBudget(): number {
+    return this.settlingPassBudget;
+  }
+
   public diagnostics(): readonly RsglFileDiagnostic[] {
     return this.collectedDiagnostics;
   }
@@ -136,6 +177,40 @@ export class RsglModuleNamespaceCycleStabilizer {
       aliases.set(alias, members);
     }
     members.add(member);
+  }
+
+  private incrementChangingPasses(edge: NamespaceImportEdge, member: string): number {
+    let aliases = this.changingPasses.get(edge.from);
+    if (!aliases) {
+      aliases = new Map();
+      this.changingPasses.set(edge.from, aliases);
+    }
+    let members = aliases.get(edge.alias);
+    if (!members) {
+      members = new Map();
+      aliases.set(edge.alias, members);
+    }
+    const next = (members.get(member) ?? 0) + 1;
+    members.set(member, next);
+    return next;
+  }
+
+  private resetChangingPasses(edge: NamespaceImportEdge, member?: string): void {
+    const aliases = this.changingPasses.get(edge.from);
+    const members = aliases?.get(edge.alias);
+    if (!members) {
+      return;
+    }
+    if (member !== undefined) {
+      members.delete(member);
+      if (members.size > 0) {
+        return;
+      }
+    }
+    aliases?.delete(edge.alias);
+    if (aliases?.size === 0) {
+      this.changingPasses.delete(edge.from);
+    }
   }
 
   private applyLocks(
@@ -162,6 +237,53 @@ export class RsglModuleNamespaceCycleStabilizer {
     }
     return result;
   }
+}
+
+/**
+ * Retains the reverse condensation graph so each pass can mark only components
+ * that transitively depend on inputs which actually changed.
+ */
+function createImportComponentDependencyGraph(
+  components: readonly (readonly string[])[],
+  importGraph: RsglImportGraph
+): ImportComponentDependencyGraph {
+  const componentByFile = new Map<string, string>();
+  const importersByComponent = new Map<string, Set<string>>();
+  for (const component of components) {
+    const componentId = component[0];
+    importersByComponent.set(componentId, new Set());
+    for (const fileName of component) {
+      componentByFile.set(fileName, componentId);
+    }
+  }
+  for (const edge of importGraph.edges) {
+    const sourceComponent = componentByFile.get(rsglPathKey(edge.from));
+    const targetComponent = componentByFile.get(rsglPathKey(edge.to));
+    if (sourceComponent && targetComponent && sourceComponent !== targetComponent) {
+      importersByComponent.get(targetComponent)?.add(sourceComponent);
+    }
+  }
+  return { componentByFile, importersByComponent };
+}
+
+function componentsDependingOnPendingFiles(
+  pendingInputFiles: ReadonlySet<string>,
+  dependencyGraph: ImportComponentDependencyGraph
+): ReadonlySet<string> {
+  const queue = Array.from(pendingInputFiles, fileName =>
+    dependencyGraph.componentByFile.get(fileName)
+  ).filter((componentId): componentId is string => Boolean(componentId));
+  const result = new Set<string>();
+  for (let index = 0; index < queue.length; index++) {
+    for (const importer of dependencyGraph.importersByComponent.get(queue[index]) ?? []) {
+      if (result.has(importer)) {
+        continue;
+      }
+      result.add(importer);
+      queue.push(importer);
+    }
+  }
+  return result;
 }
 
 function widenNamespaceMembers(type: RsglType, names: ReadonlySet<string>): RsglType {
@@ -217,74 +339,4 @@ function valueMemberTypeFingerprint(member: RsglModuleNamespaceMember): string {
         ].join("->")
       : ""
   ].join("|");
-}
-
-function stronglyConnectedImportComponents(importGraph: RsglImportGraph): string[][] {
-  const nodes = new Set(importGraph.files.map(rsglPathKey));
-  for (const edge of importGraph.edges) {
-    nodes.add(rsglPathKey(edge.from));
-    nodes.add(rsglPathKey(edge.to));
-  }
-  const outgoing = new Map<string, Set<string>>();
-  for (const node of nodes) {
-    outgoing.set(node, new Set());
-  }
-  for (const edge of importGraph.edges) {
-    outgoing.get(rsglPathKey(edge.from))?.add(rsglPathKey(edge.to));
-  }
-
-  let nextIndex = 0;
-  const indexes = new Map<string, number>();
-  const lowLinks = new Map<string, number>();
-  const stack: string[] = [];
-  const onStack = new Set<string>();
-  const components: string[][] = [];
-
-  const visit = (node: string): void => {
-    indexes.set(node, nextIndex);
-    lowLinks.set(node, nextIndex);
-    nextIndex++;
-    stack.push(node);
-    onStack.add(node);
-
-    for (const target of outgoing.get(node) ?? []) {
-      if (!indexes.has(target)) {
-        visit(target);
-        lowLinks.set(node, Math.min(lowLinks.get(node)!, lowLinks.get(target)!));
-      } else if (onStack.has(target)) {
-        lowLinks.set(node, Math.min(lowLinks.get(node)!, indexes.get(target)!));
-      }
-    }
-
-    if (lowLinks.get(node) !== indexes.get(node)) {
-      return;
-    }
-    const component: string[] = [];
-    while (stack.length > 0) {
-      const member = stack.pop()!;
-      onStack.delete(member);
-      component.push(member);
-      if (member === node) {
-        break;
-      }
-    }
-    components.push(component.sort((left, right) => left.localeCompare(right, "en")));
-  };
-
-  for (const node of [...nodes].sort((left, right) => left.localeCompare(right, "en"))) {
-    if (!indexes.has(node)) {
-      visit(node);
-    }
-  }
-  return components;
-}
-
-function isCyclicComponent(
-  component: readonly string[],
-  importGraph: RsglImportGraph
-): boolean {
-  return component.length > 1
-    || importGraph.edges.some(edge =>
-      rsglPathKey(edge.from) === component[0] && rsglPathKey(edge.to) === component[0]
-    );
 }

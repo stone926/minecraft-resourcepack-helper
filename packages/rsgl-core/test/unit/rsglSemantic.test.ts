@@ -335,6 +335,228 @@ describe("RSGL semantic model", () => {
     assert.ok(cycleDiagnostic);
   });
 
+  it("propagates named value imports through re-exports into downstream locals", () => {
+    const mainFile = path.resolve("pack", "main.rsgl");
+    const barrelFile = path.resolve("pack", "barrel.rsgl");
+    const valuesFile = path.resolve("pack", "values.rsgl");
+    const program = bindRsglProgram([
+      {
+        fileName: mainFile,
+        module: parseRsgl([
+          "import { forwardedValue } from \"./barrel.rsgl\"",
+          "let finalLocal = forwardedValue"
+        ].join("\n"))
+      },
+      {
+        fileName: barrelFile,
+        module: parseRsgl([
+          "import { sourceValue } from \"./values.rsgl\"",
+          "export { sourceValue as forwardedValue }"
+        ].join("\n"))
+      },
+      {
+        fileName: valuesFile,
+        module: parseRsgl([
+          "let sourceValue: Number = 1",
+          "export { sourceValue }"
+        ].join("\n"))
+      }
+    ]);
+
+    const mainModel = program.models.find(model => model.fileName === mainFile);
+
+    assert.deepStrictEqual(program.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.strictEqual(mainModel?.scope.symbols.get("forwardedValue")?.type.kind, "Number");
+    assert.strictEqual(mainModel?.scope.symbols.get("finalLocal")?.type.kind, "Number");
+  });
+
+  it("propagates bare-import values into downstream loop bindings and locals", () => {
+    const mainFile = path.resolve("pack", "main.rsgl");
+    const barrelFile = path.resolve("pack", "barrel.rsgl");
+    const entriesFile = path.resolve("pack", "entries.rsgl");
+    const program = bindRsglProgram([
+      {
+        fileName: mainFile,
+        module: parseRsgl([
+          "import \"./barrel.rsgl\"",
+          "for entry in forwardedRows {",
+          "  let count = entry.count",
+          "}"
+        ].join("\n"))
+      },
+      {
+        fileName: barrelFile,
+        module: parseRsgl([
+          "import \"./entries.rsgl\"",
+          "let forwardedRows = familyRows",
+          "export { forwardedRows }"
+        ].join("\n"))
+      },
+      {
+        fileName: entriesFile,
+        module: parseRsgl([
+          "type Entry = { count: Number }",
+          "let familyRows: List<Entry> = [{ count: 1 }]",
+          "export { familyRows }"
+        ].join("\n"))
+      }
+    ]);
+
+    const mainModel = program.models.find(model => model.fileName === mainFile);
+    const importedEntries = mainModel?.scope.symbols.get("forwardedRows");
+    const loopEntry = mainModel?.symbols.find(symbol => symbol.name === "entry");
+    const localCount = mainModel?.symbols.find(symbol => symbol.name === "count");
+
+    assert.deepStrictEqual(program.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.strictEqual(importedEntries?.type.kind, "List");
+    assert.strictEqual(importedEntries?.type.elementType?.kind, "Object");
+    assert.strictEqual(loopEntry?.type.kind, "Object");
+    assert.strictEqual(loopEntry?.type.properties?.get("count")?.type.kind, "Number");
+    assert.strictEqual(localCount?.type.kind, "Number");
+  });
+
+  it("keeps named value import cycles finite while preserving cycle diagnostics", () => {
+    const leftFile = path.resolve("pack", "left.rsgl");
+    const rightFile = path.resolve("pack", "right.rsgl");
+    const numbersFile = path.resolve("pack", "numbers.rsgl");
+    const program = bindRsglProgram([
+      {
+        fileName: leftFile,
+        module: parseRsgl([
+          "import { rightValue } from \"./right.rsgl\"",
+          "import { stableNumber } from \"./numbers.rsgl\"",
+          "let leftValue = { next: rightValue }",
+          "let stableLocal = stableNumber",
+          "export { leftValue }"
+        ].join("\n"))
+      },
+      {
+        fileName: rightFile,
+        module: parseRsgl([
+          "import { leftValue } from \"./left.rsgl\"",
+          "let rightValue = { next: leftValue }",
+          "export { rightValue }"
+        ].join("\n"))
+      },
+      {
+        fileName: numbersFile,
+        module: parseRsgl([
+          "let stableNumber: Number = 1",
+          "export { stableNumber }"
+        ].join("\n"))
+      }
+    ]);
+
+    const leftModel = program.models.find(model => model.fileName === leftFile);
+    const rightModel = program.models.find(model => model.fileName === rightFile);
+    const leftValue = leftModel?.scope.symbols.get("leftValue")?.type;
+    const rightValue = rightModel?.scope.symbols.get("rightValue")?.type;
+    const stableLocal = leftModel?.scope.symbols.get("stableLocal")?.type;
+
+    assert.ok(program.diagnostics.some(diagnostic => diagnostic.code === "rsgl.importCycle"));
+    assert.strictEqual(leftValue?.kind, "Object");
+    assert.strictEqual(leftValue?.properties?.get("next")?.type.kind, "Any");
+    assert.strictEqual(rightValue?.kind, "Object");
+    assert.strictEqual(rightValue?.properties?.get("next")?.type.kind, "Any");
+    assert.strictEqual(stableLocal?.kind, "Number");
+  });
+
+  it("infers acyclic bare imports inside named value import cycles", () => {
+    const leftFile = path.resolve("pack", "left.rsgl");
+    const rightFile = path.resolve("pack", "right.rsgl");
+    const numbersFile = path.resolve("pack", "numbers.rsgl");
+    const program = bindRsglProgram([
+      {
+        fileName: leftFile,
+        module: parseRsgl([
+          "import { rightValue } from \"./right.rsgl\"",
+          "import \"./numbers.rsgl\"",
+          "let leftValue = { next: rightValue }",
+          "let stableLocal = stableNumber",
+          "export { leftValue }"
+        ].join("\n"))
+      },
+      {
+        fileName: rightFile,
+        module: parseRsgl([
+          "import { leftValue } from \"./left.rsgl\"",
+          "let rightValue = { next: leftValue }",
+          "export { rightValue }"
+        ].join("\n"))
+      },
+      {
+        fileName: numbersFile,
+        module: parseRsgl([
+          "let stableNumber: Number = 1",
+          "export { stableNumber }"
+        ].join("\n"))
+      }
+    ]);
+
+    const leftModel = program.models.find(model => model.fileName === leftFile);
+    const stableImport = leftModel?.scope.symbols.get("stableNumber");
+    const stableLocal = leftModel?.scope.symbols.get("stableLocal");
+
+    assert.ok(program.diagnostics.some(diagnostic => diagnostic.code === "rsgl.importCycle"));
+    assert.strictEqual(stableImport?.kind, "import");
+    assert.strictEqual(stableImport?.importBinding?.kind, "all");
+    assert.strictEqual(stableImport?.importBinding?.sourceFile, numbersFile);
+    assert.strictEqual(stableLocal?.type.kind, "Number");
+  });
+
+  it("restores earlier bare-import precedence when its re-export appears after a later owner", () => {
+    const consumerFile = path.resolve("pack", "consumer.rsgl");
+    const preferredBarrelFile = path.resolve("pack", "preferred-barrel.rsgl");
+    const preferredValuesFile = path.resolve("pack", "preferred-values.rsgl");
+    const fallbackFile = path.resolve("pack", "fallback.rsgl");
+    const consumerModule = parseRsgl([
+      "import \"./preferred-barrel.rsgl\"",
+      "import \"./fallback.rsgl\"",
+      "let selected = sharedValue"
+    ].join("\n"));
+    const program = bindRsglProgram([
+      {
+        fileName: consumerFile,
+        module: consumerModule
+      },
+      {
+        fileName: preferredBarrelFile,
+        module: parseRsgl([
+          "import \"./preferred-values.rsgl\"",
+          "export { preferredValue as sharedValue }"
+        ].join("\n"))
+      },
+      {
+        fileName: preferredValuesFile,
+        module: parseRsgl([
+          "let preferredValue: Number = 1",
+          "export { preferredValue }"
+        ].join("\n"))
+      },
+      {
+        fileName: fallbackFile,
+        module: parseRsgl([
+          "let sharedValue: String = \"fallback\"",
+          "export { sharedValue }"
+        ].join("\n"))
+      }
+    ]);
+
+    const consumerModel = program.models.find(model => model.fileName === consumerFile);
+    const sharedImport = consumerModel?.scope.symbols.get("sharedValue");
+    const selected = consumerModel?.scope.symbols.get("selected");
+    const preferredImport = consumerModule.statements.find(statement => statement.kind === "ImportDecl");
+
+    assert.deepStrictEqual(program.diagnostics.map(diagnostic => diagnostic.code), []);
+    assert.strictEqual(preferredImport?.source?.value, "./preferred-barrel.rsgl");
+    assert.strictEqual(sharedImport?.kind, "import");
+    assert.strictEqual(sharedImport?.importBinding?.kind, "all");
+    assert.strictEqual(sharedImport?.importBinding?.sourceFile, preferredBarrelFile);
+    assert.deepStrictEqual(sharedImport?.range, preferredImport?.source?.range);
+    assert.strictEqual(sharedImport?.type.kind, "Number");
+    assert.strictEqual(selected?.type.kind, "Number");
+  });
+
   it("resolves named imports to target module symbols and signatures", () => {
     const mainFile = path.resolve("pack", "main.rsgl");
     const templatesFile = path.resolve("pack", "templates.rsgl");

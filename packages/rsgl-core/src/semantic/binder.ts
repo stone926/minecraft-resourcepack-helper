@@ -157,6 +157,7 @@ class RsglBinder implements RsglExpressionCheckContext {
     predeclareTypeAliases(this.module.statements, this.globalScope, this.diagnostics);
     resolveTypeAliases(this.globalScope, this.diagnostics);
     this.predeclareTopLevel(this.module.statements, this.globalScope);
+    this.installPrelinkedValueImports(this.globalScope);
     this.checkTopLevelStatements(this.module.statements, this.globalScope, resourcesCallerContext);
     applyLambdaValueDiagnostics(this.diagnostics, this.module.statements, this.globalScope);
     this.diagnostics.push(...exportedLambdaAnnotationDiagnostics(this.module.statements, this.globalScope));
@@ -474,8 +475,50 @@ class RsglBinder implements RsglExpressionCheckContext {
 
     for (const specifier of statement.namedImports) {
       if (!this.options.typeOnlyImportNames?.has(specifier.local.text)) {
-        this.defineIdentifier(scope, specifier.local, "import", anyType, specifier);
+        const prelinked = this.options.prelinkedValueImports?.get(specifier.local.text);
+        this.defineIdentifier(
+          scope,
+          specifier.local,
+          "import",
+          prelinked?.type ?? anyType,
+          specifier
+        );
+        const symbol = scope.symbols.get(specifier.local.text);
+        if (prelinked && symbol?.node === specifier) {
+          symbol.signature = prelinked.signature;
+          symbol.finiteDomain = prelinked.finiteDomain;
+        }
+        if (symbol?.node === specifier) {
+          symbol.importBinding = {
+            kind: "named",
+            ...(resolvedFileName ? { sourceFile: resolvedFileName } : {})
+          };
+        }
       }
+    }
+  }
+
+  /** Installs linked bare-import bindings after local declarations have claimed their names. */
+  private installPrelinkedValueImports(scope: RsglScope): void {
+    for (const [name, prelinked] of this.options.prelinkedValueImports ?? []) {
+      if (scope.symbols.has(name)) {
+        continue;
+      }
+      this.define(scope, {
+        name,
+        kind: "import",
+        importBinding: {
+          kind: "all",
+          ...(prelinked.importBinding?.sourceFile
+            ? { sourceFile: prelinked.importBinding.sourceFile }
+            : {})
+        },
+        type: prelinked.type,
+        node: prelinked.node,
+        range: prelinked.range,
+        signature: prelinked.signature,
+        finiteDomain: prelinked.finiteDomain
+      });
     }
   }
 

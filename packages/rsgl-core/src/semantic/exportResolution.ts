@@ -1,5 +1,6 @@
 import { RsglDiagnostic } from "../parser";
 import { RsglPathKeyMap, rsglPathKey } from "../pathIdentity";
+import { RsglImportGraphIndex } from "./importGraphIndex";
 import { moduleExportMemberCategory } from "./moduleNamespace";
 import {
   RsglFileDiagnostic,
@@ -35,7 +36,8 @@ interface ExportResolutionState {
  */
 export function createRsglExportMaps(
   models: RsglSemanticModel[],
-  importGraph: RsglImportGraph
+  importGraph: RsglImportGraph,
+  importGraphIndex = new RsglImportGraphIndex(importGraph)
 ): RsglExportMapResult {
   const modelsByFile = new RsglPathKeyMap(models.map(model => [model.fileName, model] as const));
   let state: ExportResolutionState = {
@@ -48,10 +50,21 @@ export function createRsglExportMaps(
       new Map<string, readonly string[]>()
     ] as const))
   };
+  if (!models.some(model => model.exports.some(record => Boolean(record.source)))) {
+    const fileDiagnostics: RsglFileDiagnostic[] = [];
+    state = buildExportMaps(
+      models,
+      importGraphIndex,
+      modelsByFile,
+      state,
+      fileDiagnostics
+    );
+    return { maps: state.maps, fileDiagnostics };
+  }
   const maximumPasses = Math.max(4, models.length * 4 + importGraph.edges.length * 2);
 
   for (let pass = 0; pass < maximumPasses; pass++) {
-    const next = buildExportMaps(models, importGraph, modelsByFile, state, undefined);
+    const next = buildExportMaps(models, importGraphIndex, modelsByFile, state, undefined);
     if (sameExportState(state, next)) {
       state = next;
       break;
@@ -60,13 +73,13 @@ export function createRsglExportMaps(
   }
 
   const fileDiagnostics: RsglFileDiagnostic[] = [];
-  state = buildExportMaps(models, importGraph, modelsByFile, state, fileDiagnostics);
+  state = buildExportMaps(models, importGraphIndex, modelsByFile, state, fileDiagnostics);
   return { maps: state.maps, fileDiagnostics };
 }
 
 function buildExportMaps(
   models: readonly RsglSemanticModel[],
-  importGraph: RsglImportGraph,
+  importGraphIndex: RsglImportGraphIndex,
   modelsByFile: ReadonlyMap<string, RsglSemanticModel>,
   previous: ExportResolutionState,
   diagnostics: RsglFileDiagnostic[] | undefined
@@ -124,7 +137,13 @@ function buildExportMaps(
         continue;
       }
 
-      const targetModel = resolveExportTargetModel(model, record.source, importGraph, modelsByFile);
+      const targetModel = resolveExportTargetModel(
+        model,
+        record.source,
+        record.resolvedFileName,
+        importGraphIndex,
+        modelsByFile
+      );
       if (!targetModel) {
         continue;
       }
@@ -186,13 +205,11 @@ function buildExportMaps(
 function resolveExportTargetModel(
   model: RsglSemanticModel,
   source: string,
-  importGraph: RsglImportGraph,
+  resolvedFileName: string | undefined,
+  importGraphIndex: RsglImportGraphIndex,
   modelsByFile: ReadonlyMap<string, RsglSemanticModel>
 ): RsglSemanticModel | undefined {
-  const currentFile = rsglPathKey(model.fileName);
-  const targetFile = importGraph.edges.find(edge =>
-    rsglPathKey(edge.from) === currentFile && edge.source === source
-  )?.to;
+  const targetFile = importGraphIndex.resolve(model.fileName, source, resolvedFileName)?.to;
   return targetFile ? modelsByFile.get(rsglPathKey(targetFile)) : undefined;
 }
 

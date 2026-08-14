@@ -164,6 +164,11 @@ export interface RsglSymbol {
   name: string;
   kind: RsglSymbolKind;
   type: RsglType;
+  /** Direct import provenance retained across prelink/rebind passes. */
+  importBinding?: {
+    kind: "named" | "all";
+    sourceFile?: string;
+  };
   /** Present on callable builtin symbols and sourced from the builtin registry. */
   effect?: RsglBuiltinEffect;
   node?: RsglNode;
@@ -303,6 +308,8 @@ export interface RsglBindOptions {
   prelinkedTypeAliases?: ReadonlyMap<string, RsglTypeAliasSymbol>;
   /** Named imports proven to exist only in the type namespace. */
   typeOnlyImportNames?: ReadonlySet<string>;
+  /** Linked value imports supplied before expression binding for downstream inference. */
+  prelinkedValueImports?: ReadonlyMap<string, RsglSymbol>;
   /** Namespace imports resolved by the bounded program prelink pass. */
   prelinkedModuleNamespaces?: ReadonlyMap<string, RsglType>;
 }

@@ -62,6 +62,25 @@ describe("RSGL record type semantics", () => {
     assert.strictEqual(model.symbols.find(symbol => symbol.name === "safe")?.type.kind, "String");
   });
 
+  it("carries has narrowing through true conjunction branches", () => {
+    const model = bind([
+      "type Animation = { frametime: Number }",
+      "type Entry = { animation?: Animation; top?: String }",
+      "let record: Entry = {}",
+      "let enabled: Boolean = true",
+      "if enabled && has(record, \"animation\") {",
+      "  let animation = record.animation",
+      "}",
+      "if has(record, \"top\") && enabled {",
+      "  let top = record.top",
+      "}"
+    ]);
+
+    assert.deepStrictEqual(codes(model), []);
+    assert.strictEqual(model.symbols.find(symbol => symbol.name === "animation")?.type.kind, "Object");
+    assert.strictEqual(model.symbols.find(symbol => symbol.name === "top")?.type.kind, "String");
+  });
+
   it("removes definitely non-object union arms after a has guard", () => {
     const model = bind([
       "type Box = { value: String }",

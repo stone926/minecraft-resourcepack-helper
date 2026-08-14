@@ -138,6 +138,220 @@ describe("RSGL module namespace semantics", () => {
     assert.strictEqual(program.models.find(model => model.fileName === bFile)?.scope.symbols.get("FROM_A")?.type.kind, "Number");
   });
 
+  it("does not classify late acyclic value convergence as recursive namespace inference", () => {
+    const root = path.resolve("module-namespace-late-acyclic-value");
+    const chainFile = (index: number) => path.join(root, `value-${index}.rsgl`);
+    const aFile = path.join(root, "a.rsgl");
+    const bFile = path.join(root, "b.rsgl");
+    const valueChain = [
+      {
+        fileName: chainFile(0),
+        module: parseRsgl("let VALUE_0: Number = 1\nexport { VALUE_0 }")
+      },
+      ...Array.from({ length: 10 }, (_, offset) => {
+        const index = offset + 1;
+        return {
+          fileName: chainFile(index),
+          module: parseRsgl([
+            `import { VALUE_${index - 1} } from "./value-${index - 1}.rsgl"`,
+            `let VALUE_${index} = VALUE_${index - 1}`,
+            `export { VALUE_${index} }`
+          ].join("\n"))
+        };
+      })
+    ];
+    const program = bindRsglProgram([
+      ...valueChain,
+      {
+        fileName: aFile,
+        module: parseRsgl([
+          "import * as b from \"./b.rsgl\"",
+          "import { VALUE_10 } from \"./value-10.rsgl\"",
+          "let A_VALUE = VALUE_10",
+          "let FROM_B = b.B_VALUE",
+          "export { A_VALUE, FROM_B }"
+        ].join("\n"))
+      },
+      {
+        fileName: bFile,
+        module: parseRsgl([
+          "import * as a from \"./a.rsgl\"",
+          "let B_VALUE: Number = 2",
+          "let FROM_A = a.A_VALUE",
+          "export { B_VALUE, FROM_A }"
+        ].join("\n"))
+      }
+    ]);
+
+    assert.strictEqual(program.fileDiagnostics.some(item => item.code === "rsgl.importCycle"), true);
+    assert.strictEqual(
+      program.fileDiagnostics.some(item => item.code === "rsgl.cyclicNamespaceTypeInference"),
+      false
+    );
+    const a = program.models.find(model => model.fileName === aFile)!;
+    const b = program.models.find(model => model.fileName === bFile)!;
+    assert.strictEqual(a.scope.symbols.get("A_VALUE")?.type.kind, "Number");
+    assert.strictEqual(b.scope.symbols.get("FROM_A")?.type.kind, "Number");
+    assert.strictEqual(
+      resolveModuleNamespaceMember(b.scope.symbols.get("a")!.type, "A_VALUE")?.symbol.type.kind,
+      "Number"
+    );
+  });
+
+  it("accounts for finite downstream namespace SCC latency before widening an upstream SCC", () => {
+    const root = path.resolve("module-namespace-dependent-scc-latency");
+    const ringSize = 12;
+    const ringFile = (index: number) => path.join(root, `ring-${index}.rsgl`);
+    const aFile = path.join(root, "a.rsgl");
+    const bFile = path.join(root, "b.rsgl");
+    const finiteRing = Array.from({ length: ringSize }, (_, index) => {
+      const next = (index + 1) % ringSize;
+      return {
+        fileName: ringFile(index),
+        module: parseRsgl([
+          `import * as next from "./ring-${next}.rsgl"`,
+          index === ringSize - 1
+            ? `let VALUE_${index}: Number = 1`
+            : `let VALUE_${index} = next.VALUE_${next}`,
+          `export { VALUE_${index} }`
+        ].join("\n"))
+      };
+    });
+    const program = bindRsglProgram([
+      ...finiteRing,
+      {
+        fileName: aFile,
+        module: parseRsgl([
+          "import * as b from \"./b.rsgl\"",
+          "import { VALUE_0 } from \"./ring-0.rsgl\"",
+          "let A_VALUE = VALUE_0",
+          "let FROM_B = b.B_VALUE",
+          "export { A_VALUE, FROM_B }"
+        ].join("\n"))
+      },
+      {
+        fileName: bFile,
+        module: parseRsgl([
+          "import * as a from \"./a.rsgl\"",
+          "let B_VALUE: Number = 2",
+          "let FROM_A = a.A_VALUE",
+          "export { B_VALUE, FROM_A }"
+        ].join("\n"))
+      }
+    ]);
+
+    assert.strictEqual(program.fileDiagnostics.some(item => item.code === "rsgl.importCycle"), true);
+    assert.strictEqual(
+      program.fileDiagnostics.some(item => item.code === "rsgl.cyclicNamespaceTypeInference"),
+      false
+    );
+    const ringEntry = program.models.find(model => model.fileName === ringFile(0))!;
+    const a = program.models.find(model => model.fileName === aFile)!;
+    const b = program.models.find(model => model.fileName === bFile)!;
+    assert.strictEqual(ringEntry.scope.symbols.get("VALUE_0")?.type.kind, "Number");
+    assert.strictEqual(a.scope.symbols.get("A_VALUE")?.type.kind, "Number");
+    assert.strictEqual(b.scope.symbols.get("FROM_A")?.type.kind, "Number");
+    assert.strictEqual(
+      resolveModuleNamespaceMember(b.scope.symbols.get("a")!.type, "A_VALUE")?.symbol.type.kind,
+      "Number"
+    );
+  });
+
+  it("widens recursive namespace self imports within the global pass budget", () => {
+    const root = path.resolve("module-namespace-self-cycle");
+    const selfFile = path.join(root, "self.rsgl");
+    const program = bindRsglProgram([{
+      fileName: selfFile,
+      module: parseRsgl([
+        "import * as self from \"./self.rsgl\"",
+        "let A = [self.A]",
+        "export { A }"
+      ].join("\n"))
+    }]);
+
+    assert.strictEqual(program.fileDiagnostics.some(item => item.code === "rsgl.importCycle"), true);
+    assert.strictEqual(program.fileDiagnostics.filter(item =>
+      item.code === "rsgl.cyclicNamespaceTypeInference"
+    ).length, 1);
+    assert.strictEqual(listDepth(program.models[0].scope.symbols.get("A")!.type), 1);
+  });
+
+  it("budgets widening across a dependency chain of namespace self-cycle SCCs", () => {
+    const root = path.resolve("module-namespace-self-cycle-chain");
+    const file = (index: number) => path.join(root, `cycle-${index}.rsgl`);
+    const cycleCount = 3;
+    const program = bindRsglProgram(Array.from({ length: cycleCount }, (_, index) => ({
+      fileName: file(index),
+      module: parseRsgl([
+        `import * as self from "./cycle-${index}.rsgl"`,
+        ...(index + 1 < cycleCount
+          ? [`import * as downstream from "./cycle-${index + 1}.rsgl"`]
+          : []),
+        "let A = [self.A]",
+        "export { A }"
+      ].join("\n"))
+    })));
+
+    const inferenceDiagnostics = program.fileDiagnostics.filter(item =>
+      item.code === "rsgl.cyclicNamespaceTypeInference"
+    );
+    assert.deepStrictEqual(
+      new Set(inferenceDiagnostics.map(item => item.fileName)),
+      new Set(Array.from({ length: cycleCount }, (_, index) => file(index)))
+    );
+    assert.strictEqual(inferenceDiagnostics.length, cycleCount);
+    for (const model of program.models) {
+      assert.strictEqual(listDepth(model.scope.symbols.get("A")!.type), 1, model.fileName);
+    }
+  });
+
+  it("does not count duplicate namespace aliases as repeated non-convergence passes", () => {
+    const root = path.resolve("module-namespace-duplicate-self-alias");
+    const selfFile = path.join(root, "self.rsgl");
+    const program = bindRsglProgram([{
+      fileName: selfFile,
+      module: parseRsgl([
+        ...Array.from({ length: 8 }, () => "import * as self from \"./self.rsgl\""),
+        "let A = [self.B]",
+        "let B: Number = 1",
+        "export { A, B }"
+      ].join("\n"))
+    }]);
+
+    assert.strictEqual(
+      program.fileDiagnostics.some(item => item.code === "rsgl.cyclicNamespaceTypeInference"),
+      false
+    );
+    const type = program.models[0].scope.symbols.get("A")!.type;
+    assert.strictEqual(type.kind, "List");
+    assert.strictEqual(type.elementType?.kind, "Number");
+  });
+
+  it("keeps an unresolved first namespace binding ahead of a duplicate self import", () => {
+    const root = path.resolve("module-namespace-unresolved-first-alias");
+    const selfFile = path.join(root, "self.rsgl");
+    const program = bindRsglProgram([{
+      fileName: selfFile,
+      module: parseRsgl([
+        "import * as duplicate from \"./missing.rsgl\"",
+        "import * as duplicate from \"./self.rsgl\"",
+        "let A = [duplicate.A]",
+        "export { A }"
+      ].join("\n"))
+    }]);
+
+    const model = program.models[0];
+    const namespaceType = model.scope.symbols.get("duplicate")!.type;
+    assert.strictEqual(namespaceType.kind, "ModuleNamespace");
+    assert.strictEqual(namespaceType.moduleNamespaceId, "./missing.rsgl");
+    assert.notStrictEqual(namespaceType.moduleNamespaceId, selfFile);
+    assert.strictEqual(listDepth(model.scope.symbols.get("A")!.type), 1);
+    assert.strictEqual(
+      program.fileDiagnostics.some(item => item.code === "rsgl.cyclicNamespaceTypeInference"),
+      false
+    );
+  });
+
   it("widens non-converging recursive namespace types independently of unrelated files", () => {
     const root = path.resolve("module-namespace-recursive-type-cycle");
     const aFile = path.join(root, "a.rsgl");
