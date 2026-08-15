@@ -4,10 +4,11 @@ import { uniqueValues } from "./collections";
 import { parseMinecraftResourceId } from "./resourceId";
 import { isSamePath } from "./pathKeys";
 import {
-  overlayApplies,
   readPackMetadata,
   resourceMatchesFilters,
-  type PackMetadata
+  selectActiveOverlays,
+  type PackMetadata,
+  type ResourcePackFormat
 } from "./packMetadata";
 
 export interface ResourceLocation {
@@ -22,6 +23,8 @@ export interface ResourceRootCandidateOptions {
   getPackMetadata?: (packRoot: string) => PackMetadata;
   resourcePath?: string;
   resourcePackRoots?: string[];
+  targetPackFormat?: ResourcePackFormat;
+  overlaySelection?: readonly string[];
 }
 
 export interface ConfiguredPackResourceRootCandidateOptions {
@@ -29,6 +32,8 @@ export interface ConfiguredPackResourceRootCandidateOptions {
   getPackMetadata?: (packRoot: string) => PackMetadata;
   resourcePath?: string;
   excludedPackRoot?: string | null;
+  targetPackFormat?: ResourcePackFormat;
+  overlaySelection?: readonly string[];
 }
 
 export interface ResourceFileRequest {
@@ -372,8 +377,7 @@ function getPackResourceRootCandidates(
   const metadata = getPackMetadata(packRoot, options);
   const baseAssetsRoot = path.join(packRoot, "assets");
   const candidates: string[] = [];
-  const activeOverlayRoots = metadata.overlays
-    .filter(overlay => overlayApplies(overlay))
+  const activeOverlayRoots = selectActiveOverlays(metadata.overlays, options)
     .map(overlay => path.join(packRoot, overlay.directory, "assets"))
     .reverse();
 

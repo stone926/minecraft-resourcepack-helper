@@ -180,12 +180,12 @@ export class ArchiveResourceStore {
 
   public async readFile(uri: SerializedResourceUri): Promise<Uint8Array> {
     const { mount, entryPath } = this.resolveResourceUri(uri);
-    await new Promise<void>(resolve => setImmediate(resolve));
+    const result = await mount.archive.readFile(entryPath);
     this.assertActive();
     if (this.mountsByAuthority.get(resourceAuthority(uri)) !== mount) {
       throw new ArchiveResourceStoreError("staleResourceUri", `Archive resource URI is stale: ${uri}`);
     }
-    return mount.archive.readFile(entryPath);
+    return result;
   }
 
   /** Invalidates all mounted layer identities backed by one concrete source. */

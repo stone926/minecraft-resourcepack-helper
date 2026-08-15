@@ -23,6 +23,8 @@ interface PendingScreenshot {
   timer: ReturnType<typeof setTimeout>;
 }
 
+const modelPreviewReadyTimeoutMs = 10_000;
+
 export class ModelPreviewPanel implements vscode.Disposable {
   private static current: ModelPreviewPanel | null = null;
 
@@ -34,6 +36,10 @@ export class ModelPreviewPanel implements vscode.Disposable {
   private readonly pendingScreenshots = new Map<string, PendingScreenshot>();
   private targetUri: vscode.Uri;
   private ready = false;
+  private readyWait: Promise<void> | null = null;
+  private resolveReadyWait: (() => void) | null = null;
+  private rejectReadyWait: ((reason: Error) => void) | null = null;
+  private readyWaitTimer: ReturnType<typeof setTimeout> | null = null;
   private hasPreview = false;
   private currentRefresh: Promise<void> | null = null;
   private refreshCancellation: ModelPreviewCancellationSource | null = null;
@@ -78,7 +84,7 @@ export class ModelPreviewPanel implements vscode.Disposable {
 
     this.watcher = new ModelPreviewWatcher(
       this.tracker,
-      changedFileNameOrUri => this.refresh(changedFileNameOrUri),
+      changedFileNameOrUri => this.requestRefresh(changedFileNameOrUri),
       uri => this.setTarget(uri)
     );
     this.disposables.push(this.watcher);
@@ -96,6 +102,7 @@ export class ModelPreviewPanel implements vscode.Disposable {
     }
     this.refreshCancellation?.cancel();
     this.refreshCancellation = null;
+    this.settleReadyWait(new Error(localize(lm("Model preview panel was closed"))));
 
     void this.panel.webview.postMessage({ type: "dispose" });
 
@@ -171,7 +178,19 @@ export class ModelPreviewPanel implements vscode.Disposable {
       ...this.panel.webview.options,
       localResourceRoots: getModelPreviewLocalResourceRoots(this.extensionUri, uri.fsPath)
     };
-    this.refresh(uri.fsPath);
+    this.requestRefresh(uri.fsPath);
+  }
+
+  private requestRefresh(changedFileNameOrUri?: string): void {
+    void this.refresh(changedFileNameOrUri).catch(error => {
+      if (this.disposed || isCancellationError(error)) {
+        return;
+      }
+      void vscode.window.showErrorMessage(localize(lm(
+        "Model preview refresh failed: {0}",
+        error instanceof Error ? error.message : String(error)
+      )));
+    });
   }
 
   private async refresh(changedFileNameOrUri?: string): Promise<void> {
@@ -231,12 +250,13 @@ export class ModelPreviewPanel implements vscode.Disposable {
   private handleMessage(message: WebviewToHost): void {
     if (message.type === "ready") {
       this.ready = true;
-      void this.refresh();
+      this.settleReadyWait();
+      this.requestRefresh();
       return;
     }
 
     if (message.type === "refreshPreview") {
-      void this.refresh("manual");
+      this.requestRefresh("manual");
       return;
     }
 
@@ -312,15 +332,44 @@ export class ModelPreviewPanel implements vscode.Disposable {
   }
 
   private waitUntilReady(): Promise<void> {
-    return new Promise(resolve => {
-      const disposable = this.panel.webview.onDidReceiveMessage(message => {
-        if ((message as WebviewToHost).type === "ready") {
-          disposable.dispose();
-          resolve();
-        }
-      });
-      this.disposables.push(disposable);
+    if (this.ready) {
+      return Promise.resolve();
+    }
+    if (this.disposed) {
+      return Promise.reject(new Error(localize(lm("Model preview panel was closed"))));
+    }
+    if (this.readyWait) {
+      return this.readyWait;
+    }
+
+    this.readyWait = new Promise<void>((resolve, reject) => {
+      this.resolveReadyWait = resolve;
+      this.rejectReadyWait = reject;
+      this.readyWaitTimer = setTimeout(() => {
+        this.settleReadyWait(new Error(localize(lm("Model preview screenshot timed out"))));
+      }, modelPreviewReadyTimeoutMs);
     });
+    return this.readyWait;
+  }
+
+  private settleReadyWait(error?: Error): void {
+    if (!this.readyWait) {
+      return;
+    }
+    if (this.readyWaitTimer) {
+      clearTimeout(this.readyWaitTimer);
+    }
+    const resolve = this.resolveReadyWait;
+    const reject = this.rejectReadyWait;
+    this.readyWait = null;
+    this.resolveReadyWait = null;
+    this.rejectReadyWait = null;
+    this.readyWaitTimer = null;
+    if (error) {
+      reject?.(error);
+    } else {
+      resolve?.();
+    }
   }
 }
 

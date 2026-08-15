@@ -68,12 +68,14 @@
           }
         },
         "ascent": {
-          "type": "number",
+          "type": "integer",
           "title": "Ascent"
         },
         "height": {
-          "type": "number",
-          "title": "Character height"
+          "type": "integer",
+          "minimum": 1,
+          "title": "Character height",
+          "default": 8
         },
         "size": {
           "type": "number",
@@ -89,7 +91,7 @@
           "minItems": 2,
           "maxItems": 2,
           "items": {
-            "type": "integer",
+            "type": "number",
             "minimum": -512,
             "maximum": 512
           }
@@ -157,13 +159,6 @@
                 "minimum": 0,
                 "maximum": 32,
                 "title": "Right boundary"
-              },
-              "ranges": {
-                "type": "array",
-                "title": "Unicode ranges",
-                "items": {
-                  "type": "string"
-                }
               }
             }
           }

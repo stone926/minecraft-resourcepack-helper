@@ -18,10 +18,11 @@ describe("command registration", function () {
     const createMissingCitPath = resolveFreshCompiledModule(
       "src/cit/commands/createMissingCitResource.ts"
     );
+    const openDefaultPath = resolveFreshCompiledModule("src/commands/openDefaultMcAssetsPath.ts");
     const script = [
       "const assert = require('node:assert/strict');",
       "const Module = require('node:module'); const originalLoad = Module._load;",
-      "const [registrationPath, runtimePath, createPackPath, createPackRootPath, createMissingCitPath] = process.argv.slice(1);",
+      "const [registrationPath, runtimePath, createPackPath, createPackRootPath, createMissingCitPath, openDefaultPath] = process.argv.slice(1);",
       "const handlers = new Map(); const disposed = []; const directCalls = [];",
       "const direct = name => (...args) => { directCalls.push([name, args]); return `${name}-result`; };",
       "const openDefault = direct('openDefault');",
@@ -45,8 +46,7 @@ describe("command registration", function () {
       "};",
       "const directStubs = new Map([",
       "  ['../cit/commands/createCitTemplate', createCit],",
-      "  ['../cit/commands/generateCitForCurrentItem', generateCit],",
-      "  ['../commands/openDefaultMcAssetsPath', openDefault]",
+      "  ['../cit/commands/generateCitForCurrentItem', generateCit]",
       "]);",
       "Module._load = function(request, parent, ...args) {",
       "  if (request === 'vscode') return vscode;",
@@ -70,6 +70,7 @@ describe("command registration", function () {
       "require.cache[createPackPath] = { id: createPackPath, filename: createPackPath, loaded: true, children: [], paths: [], exports: { createNewResourcePack: createPack } };",
       "require.cache[createPackRootPath] = { id: createPackRootPath, filename: createPackRootPath, loaded: true, children: [], paths: [], exports: { createNewResourcePackRoot: createPackRoot } };",
       "require.cache[createMissingCitPath] = { id: createMissingCitPath, filename: createMissingCitPath, loaded: true, children: [], paths: [], exports: { createMissingCitResource: createMissingCit } };",
+      "require.cache[openDefaultPath] = { id: openDefaultPath, filename: openDefaultPath, loaded: true, children: [], paths: [], exports: { openDefaultMcAssetsPath: openDefault, default: openDefault } };",
       "const extensionUri = { value: 'file:///extension', toString: () => 'file:///extension' };",
       "const context = { extensionUri, subscriptions: [] };",
       "require(registrationPath).registerCommands(context);",
@@ -90,11 +91,11 @@ describe("command registration", function () {
       "];",
       "assert.deepStrictEqual([...handlers.keys()].sort(), [...expected].sort());",
       "assert.strictEqual(context.subscriptions.length, expected.length);",
-      "assert.strictEqual(handlers.get('McResHelper.openDefaultMcAssetsPath'), openDefault);",
       "assert.strictEqual(handlers.get('McResHelper.createCitTemplate'), createCit);",
       "assert.strictEqual(handlers.get('McResHelper.generateCitForCurrentItem'), generateCit);",
       "const timerTurn = () => new Promise(resolve => setTimeout(resolve, 0));",
       "(async () => {",
+      "  assert.strictEqual(await handlers.get('McResHelper.openDefaultMcAssetsPath')(), 'openDefault-result');",
       "  assert.strictEqual(await handlers.get('McResHelper.createNewResourcePack')(), 'createPack-result');",
       "  assert.strictEqual(await handlers.get('McResHelper.createNewResourcePackRoot')(), 'createPackRoot-result');",
       "  assert.strictEqual(await handlers.get('McResHelper.createMissingCitResource')('uri', 2), 'createMissingCit-result');",
@@ -109,7 +110,7 @@ describe("command registration", function () {
       "    ['exportImage', ['png']], ['captureImage', ['capture']]",
       "  ]);",
       "  assert.deepStrictEqual(directCalls, [",
-      "    ['createPack', []], ['createPackRoot', []], ['createMissingCit', ['uri', 2]]",
+      "    ['openDefault', []], ['createPack', []], ['createPackRoot', []], ['createMissingCit', ['uri', 2]]",
       "  ]);",
       "  await handlers.get('McResHelper.openUnsupportedModelPreviewResource')();",
       "  await handlers.get('McResHelper.showWorkspaceResourceCacheStats')();",
@@ -135,7 +136,8 @@ describe("command registration", function () {
         runtimePath,
         createPackPath,
         createPackRootPath,
-        createMissingCitPath
+        createMissingCitPath,
+        openDefaultPath
       ]
     );
     assertTestProcessStatus(result);

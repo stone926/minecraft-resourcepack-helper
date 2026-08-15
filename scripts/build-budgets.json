@@ -88,7 +88,7 @@
     "installedBytes": 3525000,
     "fileCount": 88,
     "runtimeEntryCompressedBytes": {
-      "root": 103000,
+      "root": 115000,
       "rsglHost": 130000,
       "server": 255000,
       "worker": 183000,

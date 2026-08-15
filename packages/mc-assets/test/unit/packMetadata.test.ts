@@ -6,7 +6,8 @@ import {
   overlayApplies,
   parsePackMetadata,
   readPackMetadata,
-  resourceMatchesFilters
+  resourceMatchesFilters,
+  selectActiveOverlays
 } from "../../src";
 
 describe("pack metadata", () => {
@@ -50,7 +51,7 @@ describe("pack metadata", () => {
         { namespace: null, path: null }
       ]
     });
-    assert.strictEqual(metadata.overlays.every(overlayApplies), true);
+    assert.strictEqual(metadata.overlays.every(entry => overlayApplies(entry)), true);
   });
 
   it("parses supported legacy ranges and rejects reversed or non-positive ranges", () => {
@@ -73,7 +74,38 @@ describe("pack metadata", () => {
       null,
       null
     ]);
-    assert.deepStrictEqual(metadata.overlays.map(overlayApplies), [true, true, true, false, false]);
+    assert.deepStrictEqual(
+      metadata.overlays.map(entry => overlayApplies(entry)),
+      [false, false, false, false, false],
+      "legacy formats must be evaluated against the current target instead of a fixed 64 boundary"
+    );
+    assert.deepStrictEqual(
+      metadata.overlays.map(entry => overlayApplies(entry, { major: 64, minor: 0 })),
+      [true, true, true, false, false]
+    );
+  });
+
+  it("selects overlays from the target format or an explicit context override", () => {
+    const overlays = parsePackMetadata({
+      overlays: {
+        entries: [
+          { directory: "legacy", formats: [60, 64] },
+          { directory: "minor_1", min_format: [88, 1], max_format: [88, 1] },
+          { directory: "current", min_format: [88, 0], max_format: [88, 0] }
+        ]
+      }
+    }).overlays;
+
+    assert.deepStrictEqual(selectActiveOverlays(overlays, {
+      targetPackFormat: { major: 64, minor: 0 }
+    }).map(entry => entry.directory), ["legacy"]);
+    assert.deepStrictEqual(selectActiveOverlays(overlays, {
+      targetPackFormat: { major: 88, minor: 1 }
+    }).map(entry => entry.directory), ["minor_1"]);
+    assert.deepStrictEqual(selectActiveOverlays(overlays, {
+      targetPackFormat: { major: 88, minor: 0 },
+      overlaySelection: ["minor_1", "unknown"]
+    }).map(entry => entry.directory), ["minor_1"]);
   });
 
   it("ignores malformed overlay and filter entries while preserving a valid match-all object", () => {

@@ -72,10 +72,13 @@ export type ResourceGraphPreviewContext =
   | "unsupportedPreviewResource";
 
 export type ResourceSemanticDiagnosticsKind =
+  | "atlas"
   | "packMetadata"
   | "model"
   | "postEffect"
-  | "sounds";
+  | "sounds"
+  | "textureMetadata"
+  | "waypointStyle";
 
 export interface ResourceSurfaceDescriptor<K extends string = string> {
   id: string;
@@ -118,6 +121,23 @@ const postEffectDirectory = minecraftResourceDirectory("post_effect");
 const soundDirectory = minecraftResourceDirectory("sound");
 const shaderDirectory = minecraftResourceDirectory("shaderVertex");
 const textureDirectory = minecraftResourceDirectory("texture");
+
+/** Atlas IDs that the vanilla 26.2 client actually registers. */
+export const builtinMinecraftAtlasNames = [
+  "armor_trims",
+  "banner_patterns",
+  "blocks",
+  "celestials",
+  "chests",
+  "decorated_pot",
+  "gui",
+  "items",
+  "map_decorations",
+  "paintings",
+  "particles",
+  "shield_patterns",
+  "shulker_boxes"
+] as const;
 
 const modelPreviewWhen =
   `resourceLangId == json && resourceExtname == .json && resourceDirname =~ /[\\\\/]assets[\\\\/][^\\\\/]+[\\\\/]${modelDirectory}(?:[\\\\/]|$)/`;
@@ -182,7 +202,15 @@ const referenceSurfaceRegistry = [
       graphPreviewContext: "unsupportedPreviewResource"
     }
   ),
-  jsonReferenceSurface("atlases", atlasDirectory, `**/${atlasDirectory}/**/*.json`, "%schema.atlases.url%", getAtlasReferences, ["texture", "textureDirectory"]),
+  jsonReferenceSurface(
+    "atlases",
+    atlasDirectory,
+    `**/${atlasDirectory}/**/*.json`,
+    "%schema.atlases.url%",
+    getAtlasReferences,
+    ["texture", "textureDirectory"],
+    { semanticDiagnostics: "atlas" }
+  ),
   jsonReferenceSurface("equipment", equipmentDirectory, `**/${equipmentDirectory}/**/*.json`, "%schema.equipment.url%", getEquipmentReferences, ["texture"]),
   jsonReferenceSurface(
     "font",
@@ -196,7 +224,15 @@ const referenceSurfaceRegistry = [
       incomingReferenceRoots: [{ root: fontDirectory }]
     }
   ),
-  jsonReferenceSurface("waypointStyle", waypointStyleDirectory, `**/${waypointStyleDirectory}/**/*.json`, "%schema.waypointStyle.url%", getWaypointStyleReferences, ["texture"]),
+  jsonReferenceSurface(
+    "waypointStyle",
+    waypointStyleDirectory,
+    `**/${waypointStyleDirectory}/**/*.json`,
+    "%schema.waypointStyle.url%",
+    getWaypointStyleReferences,
+    ["texture"],
+    { semanticDiagnostics: "waypointStyle" }
+  ),
   jsonReferenceSurface(
     "postEffect",
     postEffectDirectory,
@@ -288,18 +324,27 @@ export const resourceSurfaceRegistry: readonly ResourceSurfaceDescriptor[] = [
   {
     id: "packMetadata",
     language: "json",
-    watcherPatterns: ["**/pack.mcmeta", "**/pack.png", `**/assets/*/${textureDirectory}/**/*.png.mcmeta`],
-    schema: [
-      { fileMatch: "**/pack.mcmeta", url: "%schema.packMcmeta.url%" },
-      { fileMatch: `**/${textureDirectory}/**/*.png.mcmeta`, url: "%schema.pngMcmeta.url%" }
-    ],
+    watcherPatterns: ["**/pack.mcmeta", "**/pack.png"],
+    schema: [{ fileMatch: "**/pack.mcmeta", url: "%schema.packMcmeta.url%" }],
     semanticDiagnostics: "packMetadata",
     fileNamePattern: /[\\/]pack\.mcmeta$/i
   },
+  {
+    id: "textureMetadata",
+    language: "json",
+    watcherPatterns: [`**/assets/*/${textureDirectory}/**/*.png.mcmeta`],
+    schema: [{ fileMatch: `**/${textureDirectory}/**/*.png.mcmeta`, url: "%schema.pngMcmeta.url%" }],
+    semanticDiagnostics: "textureMetadata",
+    fileNamePattern: /[\\/]assets[\\/][^\\/]+[\\/]textures[\\/].+\.png\.mcmeta$/i
+  },
   schemaOnlySurface("lang", "**/assets/*/lang/*.json", "%schema.lang.url%"),
-  schemaOnlySurface("credits", "**/assets/*/texts/credits.json", "%schema.credits.url%"),
-  schemaOnlySurface("gpuWarnlist", "**/assets/*/gpu_warnlist.json", "%schema.gpuWarnlist.url%"),
-  schemaOnlySurface("regionalCompliancies", "**/assets/*/regional_compliancies.json", "%schema.regionalCompliancies.url%"),
+  schemaOnlySurface("credits", "**/assets/minecraft/texts/credits.json", "%schema.credits.url%"),
+  schemaOnlySurface("gpuWarnlist", "**/assets/minecraft/gpu_warnlist.json", "%schema.gpuWarnlist.url%"),
+  schemaOnlySurface(
+    "regionalCompliancies",
+    "**/assets/minecraft/regional_compliancies.json",
+    "%schema.regionalCompliancies.url%"
+  ),
   {
     ...schemaOnlySurface("rsglConfig", "**/rsgl.config.json", "%schema.rsglConfig.url%"),
     watcherPatterns: ["**/rsgl.config.json"]
@@ -519,23 +564,24 @@ function shaderSurface<const K extends "shaderCore" | "shaderPost">(
   folder: "core" | "post",
   source: "shaders/core" | "shaders/post"
 ): ResourceSurfaceDescriptor<K> & { documentKind: K } {
+  const namespace = documentKind === "shaderCore" ? "minecraft" : "*";
   return {
     id: documentKind,
     documentKind,
     selectorPatterns: [
-      `**/assets/*/${shaderDirectory}/${folder}/**/*.vsh`,
-      `**/assets/*/${shaderDirectory}/${folder}/**/*.fsh`
+      `**/assets/${namespace}/${shaderDirectory}/${folder}/**/*.vsh`,
+      `**/assets/${namespace}/${shaderDirectory}/${folder}/**/*.fsh`
     ],
     watcherPatterns: [
-      `**/assets/*/${shaderDirectory}/**/*.vsh`,
-      `**/assets/*/${shaderDirectory}/**/*.fsh`
+      `**/assets/${namespace}/${shaderDirectory}/${folder}/**/*.vsh`,
+      `**/assets/${namespace}/${shaderDirectory}/${folder}/**/*.fsh`
     ],
     capabilities: referenceCapabilities,
     referenceExtraction: { mode: "shader", source },
     referenceTargets: ["shader"],
     graphFileExtensions: ["vsh", "fsh"],
     fileNamePattern: new RegExp(
-      `[\\\\/]${manifestDirectoryPattern(`${shaderDirectory}/${folder}`)}[\\\\/].+\\.(?:vsh|fsh)$`,
+      `[\\\\/]assets[\\\\/]${namespace === "*" ? "[^\\\\/]+" : namespace}[\\\\/]${manifestDirectoryPattern(`${shaderDirectory}/${folder}`)}[\\\\/].+\\.(?:vsh|fsh)$`,
       "i"
     )
   };
@@ -636,9 +682,9 @@ const textResourceKindsByBaseName: ReadonlyMap<string, TextResourceFileKind> = n
   ["postcredits.txt", "postcredits"]
 ]);
 
-const textsDirectoryPattern = /[\\/]assets[\\/][^\\/]+[\\/]texts[\\/]([^\\/]+)$/i;
+const textsDirectoryPattern = /[\\/]assets[\\/]minecraft[\\/]texts[\\/]([^\\/]+)$/i;
 
-/** Kind of a semantic `assets/<ns>/texts/*.txt` document, or null. */
+/** Kind of a fixed vanilla `assets/minecraft/texts/*.txt` document, or null. */
 export function getTextResourceFileKind(fileName: string): TextResourceFileKind | null {
   const match = textsDirectoryPattern.exec(fileName);
   return match ? textResourceKindsByBaseName.get(match[1].toLowerCase()) ?? null : null;

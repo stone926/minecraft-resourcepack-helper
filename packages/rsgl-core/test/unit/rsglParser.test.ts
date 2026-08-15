@@ -1059,6 +1059,42 @@ describe("RSGL parser", () => {
     assert.strictEqual(powered.value.whenFalse.kind, "ListExpr");
   });
 
+  it("ignores closing braces inside interpolation strings and comments", () => {
+    const source = [
+      "let stringBrace = `head ${\"}\"} tail`",
+      "let blockCommentBrace = `head ${value /* } */} tail`",
+      "let lineCommentBrace = `head ${value // }",
+      "} tail`"
+    ].join("\n");
+    const module = parseRsgl(source);
+
+    assert.deepStrictEqual(module.diagnostics, []);
+    for (const statement of module.statements) {
+      assert.strictEqual(statement.kind, "LetDecl");
+      if (statement.kind !== "LetDecl") {
+        continue;
+      }
+      assert.strictEqual(statement.value.kind, "TemplateStringExpr");
+      if (statement.value.kind === "TemplateStringExpr") {
+        const finalPart = statement.value.parts.at(-1);
+        assert.strictEqual(finalPart?.kind, "text");
+        if (finalPart?.kind === "text") {
+          assert.strictEqual(finalPart.text.trim(), "tail");
+        }
+      }
+    }
+  });
+
+  it("bounds hostile expression nesting with a parser diagnostic", () => {
+    const depth = 2_048;
+    const module = parseRsgl(`let nested = ${"[".repeat(depth)}0${"]".repeat(depth)}`);
+
+    assert.strictEqual(
+      module.diagnostics.filter(diagnostic => diagnostic.code === "rsgl.expressionNestingTooDeep").length,
+      1
+    );
+  });
+
   it("parses list and object spreads in source order beside computed keys", () => {
     const source = [
       "let combined = [head, ...middle, tail]",

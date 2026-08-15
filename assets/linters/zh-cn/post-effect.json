@@ -82,7 +82,8 @@
         },
         "output": {
           "type": "string",
-          "title": "output 输出目标"
+          "title": "output 输出目标",
+          "description": "此 pass 的输出目标。只能是 minecraft:main 或 targets 中定义的自定义目标；其他内置目标仅可作为只读输入。"
         },
         "uniforms": {
           "type": "object",
@@ -107,7 +108,7 @@
         "target": {
           "type": "string",
           "title": "target 输入目标",
-          "description": "输入目标名称。内置目标包括 minecraft:main（主渲染目标）、minecraft:depth（深度纹理）和自定义渲染目标。"
+          "description": "输入目标名称，可引用 targets 中定义的自定义目标，或七个只读内置输入目标：minecraft:main、minecraft:translucent、minecraft:item_entity、minecraft:particles、minecraft:weather、minecraft:clouds、minecraft:entity_outline。"
         },
         "use_depth_buffer": {
           "type": "boolean",

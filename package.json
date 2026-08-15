@@ -137,15 +137,15 @@
         "url": "%schema.lang.url%"
       },
       {
-        "fileMatch": "**/assets/*/texts/credits.json",
+        "fileMatch": "**/assets/minecraft/texts/credits.json",
         "url": "%schema.credits.url%"
       },
       {
-        "fileMatch": "**/assets/*/gpu_warnlist.json",
+        "fileMatch": "**/assets/minecraft/gpu_warnlist.json",
         "url": "%schema.gpuWarnlist.url%"
       },
       {
-        "fileMatch": "**/assets/*/regional_compliancies.json",
+        "fileMatch": "**/assets/minecraft/regional_compliancies.json",
         "url": "%schema.regionalCompliancies.url%"
       },
       {

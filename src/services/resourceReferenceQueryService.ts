@@ -307,7 +307,17 @@ export class ResourceReferenceQueryService {
       return { references: [], coverage: "unavailable" };
     }
     const edges = ensured.context
-      ? this.universe.getIncoming(identity.primaryKey)
+      ? this.universe.getIncoming(
+          identity.primaryKey,
+          createResourceResolutionContext(
+            ensured.context,
+            this.refreshCoordinator.applicableProviderIds(
+              options.includeGenerated === true,
+              ensured.context.projectId,
+              ensured.rsglApplicability
+            )
+          )
+        )
           .filter(edge => edge.projectId === ensured.context!.projectId)
           .filter(edge => relationship === undefined || edge.relationship === relationship)
       : [];
@@ -385,8 +395,18 @@ export class ResourceReferenceQueryService {
     }
     const ensured = await this.refreshCoordinator.ensureProducerProject(producer, options);
     const current = this.universe.getProducer(producerId) ?? producer;
+    const resolutionContext = ensured.context
+      ? createResourceResolutionContext(
+          ensured.context,
+          this.refreshCoordinator.applicableProviderIds(
+            options.includeGenerated === true,
+            ensured.context.projectId,
+            ensured.rsglApplicability
+          )
+        )
+      : undefined;
     const references = uniqueLogicalKeys(current.logicalKeys).flatMap(target =>
-      this.universe.getIncoming(target)
+      this.universe.getIncoming(target, resolutionContext)
         .filter(edge => edge.projectId === current.projectId)
         .filter(edge => relationship === undefined || edge.relationship === relationship)
         .flatMap(edge => {

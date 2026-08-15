@@ -44,6 +44,15 @@ describe("RSGL collection runtime", () => {
     );
   });
 
+  it("diagnoses non-string join elements at runtime", () => {
+    const errors: string[] = [];
+    const source = ["one", 2, "three"] as EvaluationValue;
+    const context = evaluationContext(new Map([["source", source]]), 100_000, errors);
+
+    assert.strictEqual(evaluate("join(source, \"|\")", context), undefined);
+    assert.deepStrictEqual(errors, ["rsgl.collectionExpected"]);
+  });
+
   it("flattens Lists with JavaScript depth semantics and ordering", () => {
     const context = evaluationContext();
     const nested = "[[[[1]]], [[2]], [true], 4]";

@@ -6,16 +6,16 @@ import {
   ancestorPackMetadataCandidates,
   findPackRoot,
   normalizePathKey,
+  parseAssetsPath,
   parsePackMetadata,
   readPackMetadata,
   type PackMetadata
 } from "../../packages/mc-assets/src";
 import {
   type JsonDocumentNode,
-  memberName,
-  objectMembers,
   parseJsonAst
 } from "../utils/jsonAst";
+import type { SoundEventFileGraph } from "../diagnostics/soundEventGraph";
 import { LruCache } from "./lruCache";
 import {
   FileFreshnessPolicy,
@@ -65,7 +65,10 @@ export class FileSystemResourceCache {
   >(128);
   private readonly packRootCache = new LruCache<string, FreshnessCacheEntry<string | null>>(4096);
   private readonly packMetadataCache = new LruCache<string, VersionedCacheEntry<PackMetadata>>(256);
-  private readonly soundEventsCache = new LruCache<string, VersionedCacheEntry<Set<string> | null>>(512);
+  private readonly soundEventGraphCache = new LruCache<
+    string,
+    VersionedCacheEntry<SoundEventFileGraph | null>
+  >(512);
 
   constructor(
     private readonly state: ResourceCacheGenerationState,
@@ -275,13 +278,25 @@ export class FileSystemResourceCache {
     return metadata;
   }
 
-  getSoundEvents(soundsJsonPath: string): Set<string> | null {
-    return this.getVersionedFileValue("soundEvents", this.soundEventsCache, soundsJsonPath, () => {
-      const ast = this.getJsonFileAst(soundsJsonPath);
-      return ast
-        ? new Set(objectMembers(ast.body).map(member => memberName(member)).filter((name): name is string => Boolean(name)))
-        : null;
-    });
+  async getSoundEventGraphAsync(soundsJsonPath: string): Promise<SoundEventFileGraph | null> {
+    const key = normalizePathKey(soundsJsonPath);
+    const version = this.getFileVersion(soundsJsonPath)
+      ?? missingFileVersion(this.state.getResourceFsGeneration());
+    const cached = this.soundEventGraphCache.get(key);
+    if (cached?.version === version) {
+      this.metrics.hit("soundEvents");
+      return cached.value;
+    }
+
+    this.metrics.miss("soundEvents");
+    const ast = await this.getJsonFileAstAsync(soundsJsonPath);
+    const graph = ast ? await this.buildSoundEventGraph(soundsJsonPath, ast) : null;
+    const currentVersion = this.getFileVersion(soundsJsonPath)
+      ?? missingFileVersion(this.state.getResourceFsGeneration());
+    if (currentVersion === version) {
+      this.soundEventGraphCache.set(key, { version, value: graph });
+    }
+    return graph;
   }
 
   invalidateAll(): void {
@@ -294,7 +309,7 @@ export class FileSystemResourceCache {
     this.pendingFileAsts.clear();
     this.packRootCache.clear();
     this.packMetadataCache.clear();
-    this.soundEventsCache.clear();
+    this.soundEventGraphCache.clear();
   }
 
   invalidatePath(fileName: string): void {
@@ -304,7 +319,7 @@ export class FileSystemResourceCache {
     this.fileAstCache.delete(key);
     this.pendingFileAsts.delete(key);
     this.documentAstCache.delete(key);
-    this.soundEventsCache.delete(key);
+    this.soundEventGraphCache.delete(key);
     this.deleteDirectoryEntriesForAncestors(fileName);
 
     if (/[\\/]pack\.mcmeta$/i.test(fileName)) {
@@ -318,7 +333,7 @@ export class FileSystemResourceCache {
     this.pendingFileAsts.delete(normalizePathKey(document.fileName));
     this.documentAstCache.delete(documentKey(document));
     this.fileAstCache.delete(normalizePathKey(document.fileName));
-    this.soundEventsCache.delete(normalizePathKey(document.fileName));
+    this.soundEventGraphCache.delete(normalizePathKey(document.fileName));
     if (/[\\/]pack\.mcmeta$/i.test(document.fileName)) {
       this.packMetadataCache.delete(normalizePathKey(path.dirname(document.fileName)));
     }
@@ -338,7 +353,7 @@ export class FileSystemResourceCache {
       fileAst: this.fileAstCache.size,
       packRoot: this.packRootCache.size,
       packMetadata: this.packMetadataCache.size,
-      soundEvents: this.soundEventsCache.size
+      soundEvents: this.soundEventGraphCache.size
     };
   }
 
@@ -356,6 +371,16 @@ export class FileSystemResourceCache {
     } catch {
       return null;
     }
+  }
+
+  private async buildSoundEventGraph(
+    soundsJsonPath: string,
+    ast: JsonDocumentNode
+  ): Promise<SoundEventFileGraph | null> {
+    const namespace = parseAssetsPath(soundsJsonPath)?.namespace;
+    return namespace
+      ? (await import("../diagnostics/soundEventGraph.js")).buildSoundEventFileGraph(ast, namespace)
+      : null;
   }
 
   private findOpenTextDocument(fileName: string): CacheTextDocument | null {

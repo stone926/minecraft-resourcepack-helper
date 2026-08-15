@@ -27,6 +27,9 @@ describe("shared collection helpers", () => {
 });
 
 function collectTypeScriptFiles(directory: string): string[] {
+  if (!fs.existsSync(directory)) {
+    return [];
+  }
   const files: string[] = [];
   for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
     if (entry.isDirectory()) {

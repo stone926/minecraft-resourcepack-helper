@@ -1,5 +1,6 @@
 import { resolveCitPackRoot } from "./citPaths";
 import { qualifyMinecraftResourceId } from "../../packages/mc-assets/src";
+import { promises as fs } from "node:fs";
 import * as path from "node:path";
 import {
   getAssetsRootPathCandidates,
@@ -81,20 +82,11 @@ export class CitResourceIdService {
     this.inventoryState = options.inventoryState ?? citResourceIdInventoryState;
   }
 
-  getResourceIds(documentFileName: string, configuration: CitResourceIdConfiguration = {}): CitResourceIds {
-    const context = this.getCacheContext(documentFileName, configuration);
-    const cached = this.getCachedResourceIdsForContext(context);
-    if (cached) {
-      return cached;
-    }
-
-    const ids = collectResourceIds(
-      context.documentPackRoot,
-      configuration,
-      this.getBuiltinCatalog()
-    );
-    this.cached.set(this.getWarmupKey(context), { ids, cachedAt: this.now() });
-    return ids;
+  getResourceIds(
+    documentFileName: string,
+    configuration: CitResourceIdConfiguration = {}
+  ): Promise<CitResourceIds> {
+    return this.warmResourceIds(documentFileName, configuration);
   }
 
   getCachedResourceIds(documentFileName: string, configuration: CitResourceIdConfiguration = {}): CitResourceIds | null {
@@ -149,14 +141,13 @@ export class CitResourceIdService {
 
     const readyCallbacks = new Map<string, () => void>();
     const warmup: PendingWarmResourceIds = {
-      promise: new Promise<CitResourceIds>((resolve, reject) => {
-        setTimeout(() => {
-          try {
-            resolve(this.getResourceIds(documentFileName, configuration));
-          } catch (error) {
-            reject(error);
-          }
-        }, 0);
+      promise: collectResourceIdsAsync(
+        context.documentPackRoot,
+        configuration,
+        this.getBuiltinCatalog()
+      ).then(ids => {
+        this.cached.set(warmupKey, { ids, cachedAt: this.now() });
+        return ids;
       }),
       readyCallbacks
     };
@@ -247,20 +238,19 @@ export class CitResourceIdService {
 
 export const citResourceIdService = new CitResourceIdService();
 
-function collectResourceIds(
+async function collectResourceIdsAsync(
   documentPackRoot: string | null,
   configuration: CitResourceIdConfiguration,
   builtinCatalog: CitBuiltinResourceCatalog
-): CitResourceIds {
+): Promise<CitResourceIds> {
   const items = new Set(builtinCatalog.items);
   const enchantments = new Set(builtinCatalog.enchantments);
-  const roots = getAssetsRoots(documentPackRoot, configuration);
 
-  for (const assetsRoot of roots) {
-    collectAssetJsonIds(assetsRoot, ["items"], items);
-    collectAssetJsonIds(assetsRoot, ["models", "item"], items);
-    collectDataJsonIds(path.dirname(assetsRoot), ["enchantment"], enchantments);
-    collectDataJsonIds(path.dirname(assetsRoot), ["enchantments"], enchantments);
+  for (const assetsRoot of getInventoryAssetsRootCandidates(documentPackRoot, configuration)) {
+    await collectAssetJsonIdsAsync(assetsRoot, ["items"], items);
+    await collectAssetJsonIdsAsync(assetsRoot, ["models", "item"], items);
+    await collectDataJsonIdsAsync(path.dirname(assetsRoot), ["enchantment"], enchantments);
+    await collectDataJsonIdsAsync(path.dirname(assetsRoot), ["enchantments"], enchantments);
   }
 
   return {
@@ -289,68 +279,88 @@ function notifyReadySubscribers(warmup: PendingWarmResourceIds): void {
   warmup.readyCallbacks.clear();
 }
 
-function collectAssetJsonIds(assetsRoot: string, directorySegments: string[], target: Set<string>): void {
-  const namespaces = workspaceResourceCache.getDirectoryEntriesSync(assetsRoot) ?? [];
+async function collectAssetJsonIdsAsync(
+  assetsRoot: string,
+  directorySegments: string[],
+  target: Set<string>
+): Promise<void> {
+  const namespaces = await readDirectoryEntries(assetsRoot);
   for (const namespace of namespaces) {
     if (!namespace.isDirectory()) {
       continue;
     }
-    collectJsonIds(path.join(assetsRoot, namespace.name, ...directorySegments), namespace.name, "", target);
+    await collectJsonIdsAsync(
+      path.join(assetsRoot, namespace.name, ...directorySegments),
+      namespace.name,
+      "",
+      target
+    );
   }
 }
 
-function collectDataJsonIds(packRoot: string, directorySegments: string[], target: Set<string>): void {
+async function collectDataJsonIdsAsync(
+  packRoot: string,
+  directorySegments: string[],
+  target: Set<string>
+): Promise<void> {
   const dataRoot = path.join(packRoot, "data");
-  const namespaces = workspaceResourceCache.getDirectoryEntriesSync(dataRoot) ?? [];
+  const namespaces = await readDirectoryEntries(dataRoot);
   for (const namespace of namespaces) {
     if (!namespace.isDirectory()) {
       continue;
     }
-    collectJsonIds(path.join(dataRoot, namespace.name, ...directorySegments), namespace.name, "", target);
+    await collectJsonIdsAsync(
+      path.join(dataRoot, namespace.name, ...directorySegments),
+      namespace.name,
+      "",
+      target
+    );
   }
 }
 
-function collectJsonIds(directory: string, namespace: string, prefix: string, target: Set<string>, depth = 0): void {
+async function collectJsonIdsAsync(
+  directory: string,
+  namespace: string,
+  prefix: string,
+  target: Set<string>,
+  depth = 0
+): Promise<void> {
   if (depth > 16) {
     return;
   }
 
-  const entries = workspaceResourceCache.getDirectoryEntriesSync(directory);
-  if (!entries) {
-    return;
-  }
-
-  for (const entry of entries) {
+  const entries = await readDirectoryEntries(directory);
+  for (let index = 0; index < entries.length; index++) {
+    const entry = entries[index];
     const entryPath = path.join(directory, entry.name);
     if (entry.isDirectory()) {
-      collectJsonIds(entryPath, namespace, joinResourcePath(prefix, entry.name), target, depth + 1);
+      await collectJsonIdsAsync(
+        entryPath,
+        namespace,
+        joinResourcePath(prefix, entry.name),
+        target,
+        depth + 1
+      );
     } else if (entry.isFile() && entry.name.endsWith(".json")) {
       const idPath = joinResourcePath(prefix, entry.name.slice(0, -".json".length));
       target.add(`${namespace}:${idPath}`);
     }
+    if ((index + 1) % 512 === 0) {
+      await yieldToEventLoop();
+    }
   }
 }
 
-function getAssetsRoots(
-  documentPackRoot: string | null,
-  configuration: CitResourceIdConfiguration
-): string[] {
-  const roots: string[] = [];
-  if (documentPackRoot) {
-    addAssetsRootCandidates(roots, documentPackRoot);
+async function readDirectoryEntries(directory: string): Promise<import("node:fs").Dirent[]> {
+  try {
+    return await fs.readdir(directory, { withFileTypes: true });
+  } catch {
+    return [];
   }
-  for (const root of configuration.resourcePackRoots ?? []) {
-    addAssetsRootCandidates(roots, root);
-  }
-  if (configuration.defaultAssetsPath) {
-    addAssetsRootCandidates(roots, configuration.defaultAssetsPath);
-  }
+}
 
-  return uniqueValues(
-    roots
-      .filter(root => workspaceResourceCache.getDirectoryEntriesSync(root) !== null)
-      .map(root => path.normalize(root))
-  );
+function yieldToEventLoop(): Promise<void> {
+  return new Promise(resolve => setImmediate(resolve));
 }
 
 function addAssetsRootCandidates(roots: string[], candidate: string): void {
@@ -370,6 +380,23 @@ function resolveDocumentPackRoot(documentFileName: string): string | null {
     documentFileName,
     fileName => workspaceResourceCache.getPackRoot(fileName)
   );
+}
+
+function getInventoryAssetsRootCandidates(
+  documentPackRoot: string | null,
+  configuration: CitResourceIdConfiguration
+): string[] {
+  const roots: string[] = [];
+  if (documentPackRoot) {
+    addAssetsRootCandidates(roots, documentPackRoot);
+  }
+  for (const root of configuration.resourcePackRoots ?? []) {
+    addAssetsRootCandidates(roots, root);
+  }
+  if (configuration.defaultAssetsPath) {
+    addAssetsRootCandidates(roots, configuration.defaultAssetsPath);
+  }
+  return uniqueValues(roots.map(root => path.normalize(root)));
 }
 
 function getCacheKey(

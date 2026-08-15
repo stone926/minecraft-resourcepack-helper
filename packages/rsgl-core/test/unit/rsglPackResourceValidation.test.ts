@@ -352,7 +352,122 @@ describe("RSGL pack, lang, sounds, and metadata resources", () => {
     assert.ok(codes.includes("rsgl.invalidPackFilterPattern"));
     assert.ok(codes.includes("rsgl.invalidOverlayFormatRange"));
     assert.ok(codes.includes("rsgl.overlayOutsideTargetFormat"));
-    assert.ok(modernPackFormat.diagnostics.map(diagnostic => diagnostic.code).includes("rsgl.invalidPackFormatField"));
+    assert.ok(modernPackFormat.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.incompletePackFormatRange"
+      && diagnostic.message.includes("pack_format may remain")
+    ));
+  });
+
+  it("requires legacy format ranges to match their modern pack and overlay ranges", () => {
+    const result = compileSource([
+      "pack {",
+      "  pack {",
+      "    description: \"Mismatched ranges\"",
+      "    pack_format: 64",
+      "    supported_formats: [34, 64]",
+      "    min_format: 34",
+      "    max_format: 88",
+      "  }",
+      "  overlays {",
+      "    entries: [{",
+      "      directory: \"legacy\"",
+      "      formats: [34, 64]",
+      "      min_format: 34",
+      "      max_format: 88",
+      "    }]",
+      "  }",
+      "}"
+    ]);
+
+    assert.ok(result.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.invalidPackSupportedFormats"
+      && diagnostic.message.includes("same minimum and maximum")
+    ));
+    assert.ok(result.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.invalidOverlayFormatRange"
+      && diagnostic.message.includes("same minimum and maximum")
+    ));
+  });
+
+  it("requires supported_formats to contain pack_format", () => {
+    const result = compileSource([
+      "pack {",
+      "  pack {",
+      "    description: \"Mismatched representative format\"",
+      "    pack_format: 33",
+      "    supported_formats: [34, 64]",
+      "    min_format: 34",
+      "    max_format: 64",
+      "  }",
+      "}"
+    ]);
+
+    assert.ok(result.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.invalidPackSupportedFormats"
+      && diagnostic.message.includes("include pack_format")
+    ));
+  });
+
+  it("accepts matching cross-boundary legacy ranges and a redundant modern pack_format", () => {
+    const crossBoundary = compileSource([
+      "pack {",
+      "  pack {",
+      "    description: \"Cross-boundary pack\"",
+      "    pack_format: 64",
+      "    supported_formats: [34, 88]",
+      "    min_format: 34",
+      "    max_format: 88",
+      "  }",
+      "  overlays {",
+      "    entries: [{",
+      "      directory: \"cross_boundary\"",
+      "      formats: [34, 88]",
+      "      min_format: 34",
+      "      max_format: 88",
+      "    }]",
+      "  }",
+      "}"
+    ]);
+    const modern = compileSource([
+      "pack {",
+      "  pack {",
+      "    description: \"Modern pack\"",
+      "    pack_format: 88",
+      "    min_format: [88, 0]",
+      "    max_format: [88, 0]",
+      "  }",
+      "}"
+    ]);
+
+    expectNoDiagnostics(crossBoundary);
+    expectNoDiagnostics(modern);
+  });
+
+  it("requires overlay formats on every entry exactly when legacy formats are involved", () => {
+    const mixed = compileSource([
+      "pack {",
+      "  pack { description: \"Mixed\", pack_format: 64, supported_formats: [34, 88], min_format: 34, max_format: 88 }",
+      "  overlays { entries: [",
+      "    { directory: \"legacy\", formats: [34, 64], min_format: 34, max_format: 64 },",
+      "    { directory: \"modern\", min_format: 88, max_format: 88 },",
+      "  ] }",
+      "}"
+    ]);
+    const modernWithFormats = compileSource([
+      "pack {",
+      "  pack { description: \"Modern\", min_format: 88, max_format: 88 }",
+      "  overlays { entries: [{ directory: \"modern\", formats: 88, min_format: 88, max_format: 88 }] }",
+      "}"
+    ]);
+
+    assert.ok(mixed.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.invalidOverlayFormatRange"
+      && diagnostic.message.includes("every overlay entry must include formats")
+    ));
+    assert.ok(modernWithFormats.diagnostics.some(diagnostic =>
+      diagnostic.code === "rsgl.invalidOverlayFormatRange"
+      && diagnostic.message.includes("must omit formats")
+    ));
   });
 
   it("lowers pack metadata sugar to root pack.mcmeta sections", () => {

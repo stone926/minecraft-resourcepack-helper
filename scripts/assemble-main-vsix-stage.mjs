@@ -116,7 +116,7 @@ export function collectMainVsixStageFiles(repositoryRoot, options = {}) {
   const files = new Map();
   const sourceManifest = readJsonObject(path.join(root, "package.json"), "package.json");
   const publishManifest = createPublishManifest(sourceManifest);
-  addGeneratedFile(files, "package.json", `${JSON.stringify(publishManifest, null, 2)}\n`);
+  addGeneratedFile(files, "package.json", stringifyStageJson(publishManifest, jsonIndent));
   const generatedIgnore = bundleMode === "development"
     ? mainVsixDevelopmentGeneratedIgnore
     : mainVsixGeneratedIgnore;

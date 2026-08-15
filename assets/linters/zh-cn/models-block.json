@@ -17,7 +17,7 @@
     "ambientocclusion": {
       "type": "boolean",
       "title": "环境光遮蔽",
-      "description": "是否使用环境光遮蔽，默认为true。如果设置了parent，则其父模型的ambientocclusion标签会覆盖该模型的ambientocclusion标签"
+      "description": "是否使用环境光遮蔽，默认为 true；当前模型设置此字段时会覆盖从父模型继承的值。"
     },
     "display": {
       "title": "display 显示",
@@ -215,17 +215,17 @@
       "items": [
       {
         "type": "number",
-        "minimum": 0,
+        "minimum": -4,
         "maximum": 4
       },
       {
         "type": "number",
-        "minimum": 0,
+        "minimum": -4,
         "maximum": 4
       },
       {
         "type": "number",
-        "minimum": 0,
+        "minimum": -4,
         "maximum": 4
       }]
     },

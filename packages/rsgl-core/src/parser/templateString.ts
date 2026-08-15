@@ -178,15 +178,55 @@ function offsetRange(range: { start: number; end: number }, offset: number) {
 
 function findTemplateExpressionEnd(content: string, start: number): number {
   let depth = 1;
-  for (let index = start; index < content.length; index++) {
-    if (content[index] === "{") {
+  for (let index = start; index < content.length;) {
+    const char = content[index];
+    if (char === "\"") {
+      index = skipQuotedText(content, index, "\"");
+    } else if (char === "`") {
+      index = skipQuotedText(content, index, "`");
+    } else if (char === "/" && content[index + 1] === "/") {
+      index = skipLineComment(content, index + 2);
+    } else if (char === "/" && content[index + 1] === "*") {
+      index = skipBlockComment(content, index + 2);
+    } else if (char === "{") {
       depth++;
-    } else if (content[index] === "}") {
+      index++;
+    } else if (char === "}") {
       depth--;
       if (depth === 0) {
         return index;
       }
+      index++;
+    } else {
+      index++;
     }
   }
   return content.length;
+}
+
+function skipQuotedText(content: string, start: number, quote: "\"" | "`"): number {
+  let index = start + 1;
+  while (index < content.length) {
+    if (content[index] === "\\") {
+      index += index + 1 < content.length ? 2 : 1;
+    } else if (content[index] === quote) {
+      return index + 1;
+    } else {
+      index++;
+    }
+  }
+  return content.length;
+}
+
+function skipLineComment(content: string, start: number): number {
+  let index = start;
+  while (index < content.length && content[index] !== "\r" && content[index] !== "\n") {
+    index++;
+  }
+  return index;
+}
+
+function skipBlockComment(content: string, start: number): number {
+  const end = content.indexOf("*/", start);
+  return end < 0 ? content.length : end + 2;
 }

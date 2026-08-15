@@ -250,6 +250,48 @@ describe("resource universe index", () => {
     assert.deepStrictEqual(result.candidates.map(item => item.producer.producerId), [handwritten.producerId]);
   });
 
+  it("excludes filter-blocked producers only when the blocking layer is in scope", () => {
+    const index = new ResourceUniverseIndex();
+    const blocked = {
+      ...producer("physical", "handwritten", modelKey, "custom"),
+      blockedByLayerIds: ["local-layer", "custom-high"]
+    } satisfies ResourceProducer;
+    const blockedEdge = edge(blocked, textureKey);
+    index.replaceSnapshot(snapshot("physical", 1, [blocked], [blockedEdge]));
+
+    const effectiveContext = resolutionContext(
+      "effective",
+      ["local-layer", "custom-high", "custom-layer"],
+      ["physical"]
+    );
+
+    assert.strictEqual(index.resolve(
+      modelKey,
+      effectiveContext
+    ).status, "missing");
+    assert.strictEqual(index.resolve(
+      modelKey,
+      resolutionContext("custom", ["custom-high", "custom-layer"], ["physical"])
+    ).status, "missing");
+    assert.strictEqual(index.resolve(
+      modelKey,
+      resolutionContext("custom", ["custom-layer"], ["physical"])
+    ).status, "resolved", "filters outside an explicit layer scope must not hide raw resources");
+    assert.deepStrictEqual(index.getIncoming(textureKey).map(item => item.edgeId), [blockedEdge.edgeId]);
+    assert.deepStrictEqual(
+      index.getIncoming(textureKey, effectiveContext),
+      [],
+      "effective References queries must not expose edges from filtered lower-layer resources"
+    );
+    assert.deepStrictEqual(
+      index.getIncoming(
+        textureKey,
+        resolutionContext("custom", ["custom-layer"], ["physical"])
+      ).map(item => item.edgeId),
+      [blockedEdge.edgeId]
+    );
+  });
+
   it("reports a same-layer planned output collision instead of choosing arbitrarily", () => {
     const index = new ResourceUniverseIndex();
     const handwritten = producer("physical", "handwritten", modelKey, "local");
@@ -391,7 +433,7 @@ describe("resource universe index", () => {
     applicableProviderIds: readonly string[]
   ): ResourceResolutionContext {
     return {
-      contextId: "context",
+      contextId: [scope, ...orderedLayerIds, ...applicableProviderIds].join(":"),
       projectId: "project",
       scope,
       orderedLayerIds,

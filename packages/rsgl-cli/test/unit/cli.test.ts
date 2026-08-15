@@ -154,6 +154,33 @@ describe("RSGL CLI", () => {
     assert.ok(captured.stdout().includes("Usage: rsgl <command>"));
   });
 
+  it("rejects unknown options instead of treating them as the source root", () => {
+    const captured = captureIo();
+    const exitCode = runRsglCli(["build", "--frobnicate"], captured.io);
+
+    assert.strictEqual(exitCode, 2);
+    assert.ok(captured.stderr().includes("Unknown option: --frobnicate"));
+    assert.ok(captured.stdout().includes("Usage: rsgl <command>"));
+    assert.throws(
+      () => parseRsglCliArgs(["build", "--frobnicate"]),
+      /Unknown option: --frobnicate/u
+    );
+  });
+
+  it("rejects a missing --out value without consuming the next option", () => {
+    for (const argv of [
+      ["build", "src", "--out"],
+      ["build", "src", "--out", "--preview"]
+    ]) {
+      const captured = captureIo();
+      const exitCode = runRsglCli(argv, captured.io);
+
+      assert.strictEqual(exitCode, 2, argv.join(" "));
+      assert.ok(captured.stderr().includes("--out requires an output directory value."));
+      assert.ok(captured.stdout().includes("Usage: rsgl <command>"));
+    }
+  });
+
   it("prints usage and exits cleanly for the help command", () => {
     const captured = captureIo();
     const exitCode = runRsglCli(["help"], captured.io);

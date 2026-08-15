@@ -319,8 +319,11 @@ export class ResourceUniverseService {
     return this.index.getProducer(producerId);
   }
 
-  public getIncoming(target: ResourceGraphLogicalKey): ResourceEdge[] {
-    return this.index.getIncoming(target);
+  public getIncoming(
+    target: ResourceGraphLogicalKey,
+    context?: ResourceResolutionContext
+  ): ResourceEdge[] {
+    return this.index.getIncoming(target, context);
   }
 
   public getOutgoing(producerId: string): ResourceEdge[] {

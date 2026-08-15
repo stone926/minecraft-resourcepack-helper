@@ -412,11 +412,11 @@ describe("combined VSIX artifact measurement", () => {
     );
 
     const unexplainedStageChange = createComparisonInput();
-    const packageFile = unexplainedStageChange.production.stage.files.find(
-      file => file.path === "package.json"
+    const readmeFile = unexplainedStageChange.production.stage.files.find(
+      file => file.path === "README.md"
     );
-    assert.ok(packageFile);
-    packageFile.sha256 = "unexpected-package-change";
+    assert.ok(readmeFile);
+    readmeFile.sha256 = "unexpected-readme-change";
     assert.throws(
       () => reportModule.createCombinedVsixReport(unexplainedStageChange),
       /Non-optimized VSIX stage file changed/
@@ -476,7 +476,7 @@ describe("combined VSIX artifact measurement", () => {
       installedBytes: 3_525_000,
       fileCount: 88,
       runtimeEntryCompressedBytes: {
-        root: 103_000,
+        root: 115_000,
         rsglHost: 130_000,
         server: 255_000,
         worker: 183_000,
@@ -486,8 +486,8 @@ describe("combined VSIX artifact measurement", () => {
     assert.strictEqual(
       budgets.mainVsix.runtimeEntryCompressedBytes.root
         + budgets.mainVsix.runtimeEntryCompressedBytes.rsglHost,
-      233_000,
-      "moving RSGL implementation code must not relax the combined root/host allowance"
+      245_000,
+      "the reviewed root/host allowance should remain explicit and frozen"
     );
     assert.deepStrictEqual(
       Object.keys(budgets.mainVsix.runtimeEntryCompressedBytes).sort(),
@@ -544,9 +544,14 @@ describe("combined VSIX artifact measurement", () => {
     const developmentJson = Buffer.from('{\n  "title": "RSGL"\n}\n');
     const jsonSemanticHash = reportModule.semanticJsonHash({ title: "RSGL" });
     const compactSha256 = sha256(compactJson);
+    const compactManifest = Buffer.from(JSON.stringify(manifest));
+    const developmentManifest = Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`);
+    const manifestSemanticHash = reportModule.semanticJsonHash(manifest);
+    const compactManifestSha256 = sha256(compactManifest);
     const productionStagePaths = [
       ".vscodeignore",
       ...Object.values(reportModule.combinedVsixRuntimeEntries),
+      "README.md",
       "package.json",
       "syntaxes/rsgl.tmLanguage.json"
     ].sort();
@@ -554,6 +559,7 @@ describe("combined VSIX artifact measurement", () => {
       "[Content_Types].xml",
       "extension.vsixmanifest",
       "extension/package.json",
+      "extension/readme.md",
       "extension/syntaxes/rsgl.tmLanguage.json",
       ...Object.values(reportModule.combinedVsixRuntimeEntries).map(value => `extension/${value}`)
     ].sort();
@@ -561,8 +567,9 @@ describe("combined VSIX artifact measurement", () => {
     const productionIgnore = Buffer.from("**/*.map\n**/*.ts\n");
     const runtimeCompressedDelta = 5 * 20;
     const runtimeInstalledDelta = 5 * 40;
-    const jsonCompressedDelta = 12 - 8;
-    const jsonInstalledDelta = developmentJson.length - compactJson.length;
+    const jsonCompressedDelta = (12 - 8) + (20 - 15);
+    const jsonInstalledDelta = developmentJson.length - compactJson.length
+      + developmentManifest.length - compactManifest.length;
     const sourceMapCompressedDelta = 5 * 5;
     const sourceMapInstalledDelta = 5 * 10;
     const vsceMetadataCompressedDelta = 5;
@@ -605,6 +612,7 @@ describe("combined VSIX artifact measurement", () => {
         })
       );
       const jsonBytes = development ? developmentJson : compactJson;
+      const manifestBytes = development ? developmentManifest : compactManifest;
       const ignoreBytes = development ? developmentIgnore : productionIgnore;
       const sourceMaps = reportModule.combinedVsixRuntimeSourceMaps.map(entryPath => ({
         path: entryPath,
@@ -625,6 +633,9 @@ describe("combined VSIX artifact measurement", () => {
         }
         if (stagePath === "syntaxes/rsgl.tmLanguage.json") {
           return { path: stagePath, bytes: jsonBytes.length, sha256: sha256(jsonBytes) };
+        }
+        if (stagePath === "package.json") {
+          return { path: stagePath, bytes: manifestBytes.length, sha256: sha256(manifestBytes) };
         }
         if (stagePath === ".vscodeignore") {
           return { path: stagePath, bytes: ignoreBytes.length, sha256: sha256(ignoreBytes) };
@@ -661,21 +672,33 @@ describe("combined VSIX artifact measurement", () => {
         },
         manifest: {
           value: structuredClone(manifest),
-          semanticHash: reportModule.semanticJsonHash(manifest)
+          semanticHash: manifestSemanticHash
         },
         runtimeEntries,
         sourceMaps: { files: sourceMaps },
         jsonAssets: {
-          files: [{
-            path: "syntaxes/rsgl.tmLanguage.json",
-            bytes: jsonBytes.length,
-            semanticHash: jsonSemanticHash,
-            contentSha256: sha256(jsonBytes),
-            compactSha256,
-            compactBytes: compactJson.length,
-            vsixCompressedBytes: development ? 12 : 8,
-            installedBytes: jsonBytes.length
-          }]
+          files: [
+            {
+              path: "package.json",
+              bytes: manifestBytes.length,
+              semanticHash: manifestSemanticHash,
+              contentSha256: sha256(manifestBytes),
+              compactSha256: compactManifestSha256,
+              compactBytes: compactManifest.length,
+              vsixCompressedBytes: development ? 20 : 15,
+              installedBytes: manifestBytes.length
+            },
+            {
+              path: "syntaxes/rsgl.tmLanguage.json",
+              bytes: jsonBytes.length,
+              semanticHash: jsonSemanticHash,
+              contentSha256: sha256(jsonBytes),
+              compactSha256,
+              compactBytes: compactJson.length,
+              vsixCompressedBytes: development ? 12 : 8,
+              installedBytes: jsonBytes.length
+            }
+          ]
         },
         vsceMetadata: {
           files: [

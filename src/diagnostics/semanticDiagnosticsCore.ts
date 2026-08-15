@@ -1,15 +1,17 @@
 import * as path from "node:path";
 import { lm, type LocalizedMessage } from "../i18n/messages";
 import { getTextResourceFileKind } from "../resources/resourceSurfaceRegistry";
-import { maxModelParentDepth } from "../services/modelParentTraversal";
+import type { ModelParentTraversalIssue } from "../services/modelParentTraversal";
 import {
   getTextResourceIssues,
   type FileResourceIssue,
   type NonJsonIssueSeverity
 } from "./nonJsonResourceChecks";
+import type { SoundEventFileGraph, SoundEventGraphEdge } from "./soundEventGraph";
 import { parseMinecraftResourceId, findAssetsRoot, parseAssetsPath } from "../../packages/mc-assets/src";
 import { jsonAstLocationToLineCharacterRange } from "../utils/astLocationRanges";
 import {
+  builtinMinecraftAtlasNames,
   getResourceSemanticDiagnosticsKind,
   type ResourceSemanticDiagnosticsKind
 } from "../resources/resourceSurfaceRegistry";
@@ -39,6 +41,11 @@ export interface SemanticDiagnosticsModelDocument {
   ast: JsonDocumentNode;
 }
 
+export interface SemanticDiagnosticsModelParentChain {
+  models: readonly SemanticDiagnosticsModelDocument[];
+  issue: ModelParentTraversalIssue | null;
+}
+
 export interface SemanticDiagnosticsHost {
   getJsonAst(document: SemanticDiagnosticsDocument): JsonDocumentNode | null;
   readFileBytes(fileName: string): Promise<Uint8Array | undefined>;
@@ -47,8 +54,10 @@ export interface SemanticDiagnosticsHost {
     document: SemanticDiagnosticsDocument,
     ast: JsonDocumentNode,
     configuration: SemanticDiagnosticsConfiguration
-  ): Promise<readonly SemanticDiagnosticsModelDocument[]> | readonly SemanticDiagnosticsModelDocument[];
-  getSoundEvents(soundsJsonPath: string): ReadonlySet<string> | null;
+  ): Promise<SemanticDiagnosticsModelParentChain> | SemanticDiagnosticsModelParentChain;
+  getSoundEventGraph(
+    soundsJsonPath: string
+  ): Promise<SoundEventFileGraph | null> | SoundEventFileGraph | null;
 }
 
 export interface SemanticDiagnosticsOptions {
@@ -87,6 +96,16 @@ interface TextureVariable {
 }
 
 const modernPackFormatBoundary = 65;
+const builtinPostEffectInputTargets = new Set([
+  "minecraft:main",
+  "minecraft:translucent",
+  "minecraft:item_entity",
+  "minecraft:particles",
+  "minecraft:weather",
+  "minecraft:clouds",
+  "minecraft:entity_outline"
+]);
+const builtinMinecraftAtlasNameSet = new Set<string>(builtinMinecraftAtlasNames);
 
 type SemanticDiagnosticsHandler = (
   document: SemanticDiagnosticsDocument,
@@ -95,12 +114,15 @@ type SemanticDiagnosticsHandler = (
 ) => Promise<SemanticDiagnostic[]> | SemanticDiagnostic[];
 
 const semanticDiagnosticsHandlers = {
+  atlas: (document, ast) => getAtlasDiagnostics(document, ast),
   packMetadata: (document, ast, options) =>
     getPackMcmetaDiagnostics(document, ast, options.localize, options.host),
   model: (document, ast, options) =>
     getModelDiagnostics(document, ast, options.configuration, options.host),
   postEffect: (_document, ast) => getPostEffectDiagnostics(ast),
-  sounds: (document, ast, options) => getSoundDiagnostics(document, ast, options.host)
+  sounds: (document, ast, options) => getSoundDiagnostics(document, ast, options.host),
+  textureMetadata: (_document, ast) => getTextureMetadataDiagnostics(ast),
+  waypointStyle: (_document, ast) => getWaypointStyleDiagnostics(ast)
 } satisfies Record<ResourceSemanticDiagnosticsKind, SemanticDiagnosticsHandler>;
 
 export const semanticDiagnosticsHandlerKinds: readonly ResourceSemanticDiagnosticsKind[] = Object.freeze(
@@ -162,40 +184,49 @@ function getPackMcmetaDiagnostics(
   }
 
   if (min && max) {
-    const crossesBoundary = min.major < modernPackFormatBoundary && max.major >= modernPackFormatBoundary;
     const modernOnly = min.major >= modernPackFormatBoundary;
-    const legacyOnly = max.major < modernPackFormatBoundary;
+    const includesLegacyFormats = min.major < modernPackFormatBoundary;
 
-    if (modernOnly && (packFormat || supportedFormats)) {
+    if (modernOnly && supportedFormats) {
       pushDiagnostic(
         diagnostics,
-        (packFormat ?? supportedFormats)?.value ?? packNode,
-        lm("Resource packs that only support 1.21.9+ must not use pack_format or supported_formats.")
+        supportedFormats.value,
+        lm("Resource packs that only support 1.21.9+ must not use supported_formats.")
       );
     }
 
-    if (legacyOnly && !packFormat) {
-      pushDiagnostic(diagnostics, packNode, lm("Resource packs that only support 1.21.8 or earlier must use pack_format."));
-    }
-
-    if (crossesBoundary) {
-      for (const required of [
-        ["pack_format", packFormat],
-        ["supported_formats", supportedFormats],
-        ["min_format", minFormat],
-        ["max_format", maxFormat]
-      ] as const) {
+    if (includesLegacyFormats) {
+      for (const required of [["pack_format", packFormat], ["supported_formats", supportedFormats]] as const) {
         if (!required[1]) {
-          pushDiagnostic(diagnostics, packNode, lm("Resource packs crossing the 1.21.8 boundary must include {0}.", required[0]));
+          pushDiagnostic(
+            diagnostics,
+            packNode,
+            lm("Resource pack ranges that include format 64 or earlier must include {0}.", required[0])
+          );
         }
       }
 
-      const supportedMax = legacyRangeMax(supportedFormats?.value);
-      if (supportedFormats && supportedMax !== 64) {
+      const supportedRange = legacyRangeFromNode(supportedFormats?.value);
+      if (supportedFormats && supportedRange && (
+        supportedRange.min !== min.major
+        || supportedRange.max !== max.major
+      )) {
         pushDiagnostic(
           diagnostics,
           supportedFormats.value,
-          lm("Resource packs crossing the 1.21.8 boundary must set supported_formats maximum to 64.")
+          lm("supported_formats bounds must match the min_format and max_format major versions.")
+        );
+      }
+      const packFormatValue = numberValue(packFormat?.value);
+      if (
+        supportedRange
+        && packFormatValue !== undefined
+        && (packFormatValue < supportedRange.min || packFormatValue > supportedRange.max)
+      ) {
+        pushDiagnostic(
+          diagnostics,
+          packFormat?.value,
+          lm("pack_format must be included in the supported_formats range.")
         );
       }
     }
@@ -203,8 +234,14 @@ function getPackMcmetaDiagnostics(
 
   const packFormatValue = numberValue(packFormat?.value);
   if (packFormatValue !== undefined && packFormatValue >= modernPackFormatBoundary && !minFormat && !maxFormat) {
-    pushDiagnostic(diagnostics, packFormat?.value, lm("pack_format is only for resource pack formats before 65; use min_format and max_format."));
+    pushDiagnostic(
+      diagnostics,
+      packNode,
+      lm("pack.mcmeta must use min_format and max_format together for 1.21.9+ resource pack formats.")
+    );
   }
+
+  validateOverlayFormatBoundaries(ast.body, diagnostics);
 
   const packRoot = path.dirname(document.fileName);
   for (const issue of host.getPackImageResourceIssues(packRoot)) {
@@ -218,6 +255,65 @@ function getPackMcmetaDiagnostics(
   }
 
   return diagnostics;
+}
+
+function validateOverlayFormatBoundaries(
+  root: JsonAstNode,
+  diagnostics: SemanticDiagnostic[]
+): void {
+  const overlays = getObjectMember(root, "overlays");
+  const entries = arrayElements(getObjectMember(overlays?.value, "entries")?.value).map(node => {
+    const minMember = getObjectMember(node, "min_format");
+    const maxMember = getObjectMember(node, "max_format");
+    const formatsMember = getObjectMember(node, "formats");
+    return {
+      node,
+      min: formatFromNode(minMember?.value, false),
+      max: formatFromNode(maxMember?.value, true),
+      formatsMember,
+      legacyRange: legacyRangeFromNode(formatsMember?.value)
+    };
+  });
+  if (entries.length === 0) {
+    return;
+  }
+
+  const includesLegacyFormats = entries.some(entry =>
+    entry.min?.major !== undefined
+      ? entry.min.major < modernPackFormatBoundary
+      : (entry.legacyRange?.min ?? modernPackFormatBoundary) < modernPackFormatBoundary
+  );
+  for (const entry of entries) {
+    if (includesLegacyFormats && !entry.formatsMember) {
+      pushDiagnostic(
+        diagnostics,
+        entry.node,
+        lm("When any overlay supports format 64 or earlier, every overlay entry must include formats.")
+      );
+    } else if (!includesLegacyFormats && entry.formatsMember) {
+      pushDiagnostic(
+        diagnostics,
+        entry.formatsMember.value,
+        lm("Overlay entries must omit formats when all overlays support format 65 or newer.")
+      );
+    }
+
+    if (
+      entry.min
+      && entry.max
+      && entry.legacyRange
+      && (
+        entry.legacyRange.min !== entry.min.major
+        || entry.legacyRange.max !== entry.max.major
+      )
+    ) {
+      pushDiagnostic(
+        diagnostics,
+        entry.formatsMember?.value ?? entry.node,
+        lm("Overlay formats bounds must match the min_format and max_format major versions.")
+      );
+    }
+  }
 }
 
 async function getTextResourceDiagnostics(
@@ -252,19 +348,19 @@ async function getModelDiagnostics(
   const parent = getObjectMember(ast.body, "parent");
   const chain = await host.getModelParentChain(document, ast, configuration);
 
-  // The chain includes the entry model itself, so a chain of maxModelParentDepth + 1
-  // models is still within Minecraft's parent-depth budget.
-  if (chain.length > maxModelParentDepth + 1) {
+  if (chain.issue?.kind === "depth") {
     pushDiagnostic(diagnostics, parent?.value ?? ast.body, lm("Model parent chain exceeds Minecraft's maximum depth of 10."));
+  } else if (chain.issue?.kind === "cycle") {
+    pushDiagnostic(diagnostics, parent?.value ?? ast.body, lm("Model parent chain contains a cyclic parent reference."));
   }
 
-  diagnostics.push(...getTextureVariableCycleDiagnostics(chain));
+  diagnostics.push(...getTextureVariableCycleDiagnostics(chain.models));
   return diagnostics;
 }
 
 function getPostEffectDiagnostics(ast: JsonDocumentNode): SemanticDiagnostic[] {
   const diagnostics: SemanticDiagnostic[] = [];
-  const declaredTargets = new Set(["minecraft:main", "main"]);
+  const declaredTargets = new Set<string>();
   const targets = getObjectMember(ast.body, "targets");
 
   for (const target of objectMembers(targets?.value)) {
@@ -279,8 +375,12 @@ function getPostEffectDiagnostics(ast: JsonDocumentNode): SemanticDiagnostic[] {
     const output = getObjectMember(pass, "output");
     const outputName = stringValue(output?.value);
 
-    if (outputName && !declaredTargets.has(outputName)) {
-      pushDiagnostic(diagnostics, output?.value, lm("Post effect output target '{0}' is not declared in targets.", outputName));
+    if (outputName && outputName !== "minecraft:main") {
+      if (builtinPostEffectInputTargets.has(outputName)) {
+        pushDiagnostic(diagnostics, output?.value, lm("Post effect output target '{0}' is a read-only builtin target.", outputName));
+      } else if (!declaredTargets.has(outputName)) {
+        pushDiagnostic(diagnostics, output?.value, lm("Post effect output target '{0}' is not declared in targets.", outputName));
+      }
     }
 
     const inputs = getObjectMember(pass, "inputs");
@@ -291,7 +391,7 @@ function getPostEffectDiagnostics(ast: JsonDocumentNode): SemanticDiagnostic[] {
         continue;
       }
 
-      if (!declaredTargets.has(targetName)) {
+      if (!builtinPostEffectInputTargets.has(targetName) && !declaredTargets.has(targetName)) {
         pushDiagnostic(diagnostics, target?.value, lm("Post effect input target '{0}' is not declared in targets.", targetName));
       }
 
@@ -304,14 +404,84 @@ function getPostEffectDiagnostics(ast: JsonDocumentNode): SemanticDiagnostic[] {
   return diagnostics;
 }
 
-function getSoundDiagnostics(
+function getAtlasDiagnostics(
+  document: SemanticDiagnosticsDocument,
+  ast: JsonDocumentNode
+): SemanticDiagnostic[] {
+  const diagnostics: SemanticDiagnostic[] = [];
+  const namespace = parseAssetsPath(document.fileName)?.namespace;
+  const atlasName = path.basename(document.fileName, ".json");
+
+  if (namespace && namespace !== "minecraft") {
+    pushDiagnostic(
+      diagnostics,
+      ast.body,
+      lm("Atlas definitions are only loaded from the minecraft namespace.")
+    );
+  }
+  if (!builtinMinecraftAtlasNameSet.has(atlasName)) {
+    pushDiagnostic(
+      diagnostics,
+      ast.body,
+      lm("Atlas '{0}' is not a built-in atlas registered by Minecraft 26.2.", atlasName)
+    );
+  }
+  return diagnostics;
+}
+
+function getTextureMetadataDiagnostics(ast: JsonDocumentNode): SemanticDiagnostic[] {
+  const diagnostics: SemanticDiagnostic[] = [];
+  const gui = getObjectMember(ast.body, "gui");
+  const scaling = getObjectMember(gui?.value, "scaling");
+  if (stringValue(getObjectMember(scaling?.value, "type")?.value) !== "nine_slice") {
+    return diagnostics;
+  }
+
+  const width = numberValue(getObjectMember(scaling?.value, "width")?.value);
+  const height = numberValue(getObjectMember(scaling?.value, "height")?.value);
+  const border = getObjectMember(scaling?.value, "border");
+  const uniformBorder = numberValue(border?.value);
+  const left = uniformBorder ?? numberValue(getObjectMember(border?.value, "left")?.value) ?? 0;
+  const right = uniformBorder ?? numberValue(getObjectMember(border?.value, "right")?.value) ?? 0;
+  const top = uniformBorder ?? numberValue(getObjectMember(border?.value, "top")?.value) ?? 0;
+  const bottom = uniformBorder ?? numberValue(getObjectMember(border?.value, "bottom")?.value) ?? 0;
+
+  if (width !== undefined && left + right >= width) {
+    pushDiagnostic(diagnostics, border?.value ?? scaling?.value, lm("Nine-slice left and right borders must add up to less than width."));
+  }
+  if (height !== undefined && top + bottom >= height) {
+    pushDiagnostic(diagnostics, border?.value ?? scaling?.value, lm("Nine-slice top and bottom borders must add up to less than height."));
+  }
+  return diagnostics;
+}
+
+function getWaypointStyleDiagnostics(ast: JsonDocumentNode): SemanticDiagnostic[] {
+  const diagnostics: SemanticDiagnostic[] = [];
+  const nearDistance = getObjectMember(ast.body, "near_distance");
+  const farDistance = getObjectMember(ast.body, "far_distance");
+  const near = nearDistance ? numberValue(nearDistance.value) : 128;
+  const far = farDistance ? numberValue(farDistance.value) : 332;
+  if (near !== undefined && far !== undefined && far <= near) {
+    pushDiagnostic(
+      diagnostics,
+      farDistance?.value ?? nearDistance?.value ?? ast.body,
+      lm("Waypoint far_distance must be greater than near_distance.")
+    );
+  }
+  return diagnostics;
+}
+
+async function getSoundDiagnostics(
   document: SemanticDiagnosticsDocument,
   ast: JsonDocumentNode,
   host: SemanticDiagnosticsHost
-): SemanticDiagnostic[] {
+): Promise<SemanticDiagnostic[]> {
   const diagnostics: SemanticDiagnostic[] = [];
   const currentNamespace = parseAssetsPath(document.fileName)?.namespace ?? null;
-  const eventNames = new Set(objectMembers(ast.body).map(member => memberName(member)).filter((name): name is string => Boolean(name)));
+  const { buildSoundEventFileGraph, findCyclicSoundEventEdges } = await import("./soundEventGraph.js");
+  const currentGraph = currentNamespace
+    ? buildSoundEventFileGraph(ast, currentNamespace)
+    : null;
 
   for (const soundEvent of objectMembers(ast.body)) {
     const sounds = getObjectMember(soundEvent.value, "sounds");
@@ -325,9 +495,7 @@ function getSoundDiagnostics(
       const type = stringValue(getObjectMember(sound, "type")?.value);
       const name = getObjectMember(sound, "name");
       const soundName = stringValue(name?.value);
-      if (type === "event" && soundName) {
-        pushSoundEventReferenceDiagnostics(diagnostics, document, currentNamespace, eventNames, soundName, name?.value, host);
-      } else if (soundName) {
+      if (type !== "event" && soundName) {
         pushSoundFileDiagnostics(diagnostics, soundName, name?.value);
       }
 
@@ -345,6 +513,31 @@ function getSoundDiagnostics(
     }
   }
 
+  if (currentGraph) {
+    const reachableGraph = await loadReachableSoundEventGraph(document.fileName, currentGraph, host);
+    for (const reference of currentGraph.edges) {
+      const targetGraph = reachableGraph.graphsByNamespace.get(reference.targetNamespace);
+      if (targetGraph && !targetGraph.eventNames.has(reference.targetPath)) {
+        pushDiagnostic(
+          diagnostics,
+          reference.node,
+          lm("Sound event '{0}' is not defined in sounds.json.", reference.value)
+        );
+      }
+    }
+
+    const cyclicReferences = findCyclicSoundEventEdges(reachableGraph.edges);
+    for (const reference of currentGraph.edges) {
+      if (cyclicReferences.has(reference)) {
+        pushDiagnostic(
+          diagnostics,
+          reference.node,
+          lm("Sound event '{0}' directly or indirectly references itself.", reference.value)
+        );
+      }
+    }
+  }
+
   return diagnostics;
 }
 
@@ -358,37 +551,60 @@ function pushSoundFileDiagnostics(diagnostics: SemanticDiagnostic[], value: stri
   }
 }
 
-function pushSoundEventReferenceDiagnostics(
-  diagnostics: SemanticDiagnostic[],
-  document: SemanticDiagnosticsDocument,
-  currentNamespace: string | null,
-  localEvents: Set<string>,
-  value: string,
-  node: JsonAstNode | null | undefined,
-  host: SemanticDiagnosticsHost
-): void {
-  const location = parseNamespacedValue(value, currentNamespace);
-  if (!location) {
-    return;
-  }
-
-  const availableEvents = location.namespace === currentNamespace
-    ? localEvents
-    : loadSoundEventsForNamespace(document.fileName, location.namespace, host);
-
-  if (availableEvents && !availableEvents.has(location.path)) {
-    pushDiagnostic(diagnostics, node, lm("Sound event '{0}' is not defined in sounds.json.", value));
-  }
+interface ReachableSoundEventGraph {
+  graphsByNamespace: ReadonlyMap<string, SoundEventFileGraph | null>;
+  edges: readonly SoundEventGraphEdge[];
 }
 
-function loadSoundEventsForNamespace(
+async function loadReachableSoundEventGraph(
   fileName: string,
-  namespace: string,
+  currentGraph: SoundEventFileGraph,
   host: SemanticDiagnosticsHost
-): ReadonlySet<string> | null {
+): Promise<ReachableSoundEventGraph> {
   const assetsRoot = findAssetsRoot(fileName, "sounds.json");
-  const soundsJsonPath = assetsRoot ? path.join(assetsRoot, namespace, "sounds.json") : null;
-  return soundsJsonPath ? host.getSoundEvents(soundsJsonPath) : null;
+  const graphsByNamespace = new Map<string, SoundEventFileGraph | null>([
+    [currentGraph.namespace, currentGraph]
+  ]);
+  const edges: SoundEventGraphEdge[] = [];
+  const pendingEventIds = [...currentGraph.eventIds];
+  const visitedEventIds = new Set<string>();
+
+  for (let index = 0; index < pendingEventIds.length; index++) {
+    const eventId = pendingEventIds[index];
+    if (!eventId || visitedEventIds.has(eventId)) {
+      continue;
+    }
+    visitedEventIds.add(eventId);
+
+    const location = parseMinecraftResourceId(eventId);
+    if (!location.isValid) {
+      continue;
+    }
+
+    if (!graphsByNamespace.has(location.namespace)) {
+      let graph: SoundEventFileGraph | null = null;
+      if (assetsRoot) {
+        try {
+          graph = await host.getSoundEventGraph(
+            path.join(assetsRoot, location.namespace, "sounds.json")
+          );
+        } catch {
+          graph = null;
+        }
+      }
+      graphsByNamespace.set(location.namespace, graph);
+    }
+
+    const graph = graphsByNamespace.get(location.namespace);
+    for (const edge of graph?.edgesBySource.get(eventId) ?? []) {
+      edges.push(edge);
+      if (!visitedEventIds.has(edge.targetId)) {
+        pendingEventIds.push(edge.targetId);
+      }
+    }
+  }
+
+  return { graphsByNamespace, edges };
 }
 
 function getTextureVariableCycleDiagnostics(chain: readonly SemanticDiagnosticsModelDocument[]): SemanticDiagnostic[] {
@@ -456,18 +672,33 @@ function formatFromNode(node: JsonAstNode | null | undefined, isMaxFormat: boole
   };
 }
 
-function legacyRangeMax(node: JsonAstNode | null | undefined): number | null {
+function legacyRangeFromNode(
+  node: JsonAstNode | null | undefined
+): { min: number; max: number } | null {
   const number = numberValue(node);
-  if (number !== undefined) {
-    return number;
+  if (number !== undefined && Number.isInteger(number) && number > 0) {
+    return { min: number, max: number };
   }
 
   const values = arrayElements(node).map(element => numberValue(element));
-  if (values.length === 2 && values.every(value => value !== undefined)) {
-    return values[1] ?? null;
+  if (
+    values.length === 2
+    && values.every(value => value !== undefined && Number.isInteger(value) && value > 0)
+    && values[0]! <= values[1]!
+  ) {
+    return { min: values[0]!, max: values[1]! };
   }
 
-  return numberValue(getObjectMember(node, "max_inclusive")?.value) ?? null;
+  const min = numberValue(getObjectMember(node, "min_inclusive")?.value);
+  const max = numberValue(getObjectMember(node, "max_inclusive")?.value);
+  return min !== undefined
+    && max !== undefined
+    && Number.isInteger(min)
+    && Number.isInteger(max)
+    && min > 0
+    && min <= max
+    ? { min, max }
+    : null;
 }
 
 function compareFormats(left: FormatVersion, right: FormatVersion): number {
@@ -495,14 +726,6 @@ function rangeFromNode(node: JsonAstNode | null | undefined): SemanticDiagnostic
     return null;
   }
   return jsonAstLocationToLineCharacterRange(node.loc);
-}
-
-function parseNamespacedValue(value: string, defaultNamespace: string | null): { namespace: string; path: string } | null {
-  const parsed = parseMinecraftResourceId(value, defaultNamespace ?? undefined);
-  if (!parsed.hasExplicitNamespace && !defaultNamespace) {
-    return null;
-  }
-  return { namespace: parsed.namespace, path: parsed.path };
 }
 
 function isTextResourceDocument(fileName: string): boolean {

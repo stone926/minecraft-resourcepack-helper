@@ -7,16 +7,18 @@
   "required": ["sprites"],
   "properties": {
     "near_distance": {
-      "type": "number",
+      "type": "integer",
       "title": "near_distance 近距离阈值",
       "description": "使用 sprites 第一个纹理的最大距离，默认 128。",
+      "default": 128,
       "minimum": 0,
       "maximum": 60000000
     },
     "far_distance": {
-      "type": "number",
+      "type": "integer",
       "title": "far_distance 远距离阈值",
       "description": "使用 sprites 最后一个纹理的最小距离，默认 332，值应大于 near_distance。",
+      "default": 332,
       "minimum": 0,
       "maximum": 60000000
     },

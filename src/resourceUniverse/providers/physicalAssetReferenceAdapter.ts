@@ -16,6 +16,8 @@ export interface PhysicalAssetScannedDocument extends ResourceReferenceDocument 
   layerId: string;
   layerRole: ResourceLayerRole;
   outputPath: string;
+  /** Higher-priority pack layers whose filter.block rules hide this resource. */
+  blockedByLayerIds?: readonly string[];
 }
 
 export type PhysicalAssetReferenceExtractor = (
@@ -76,6 +78,9 @@ function physicalDocumentFact(
     layerId: document.layerId,
     layerRole: document.layerRole,
     outputPath: document.outputPath,
+    ...(document.blockedByLayerIds?.length
+      ? { blockedByLayerIds: [...document.blockedByLayerIds] }
+      : {}),
     references
   };
 }

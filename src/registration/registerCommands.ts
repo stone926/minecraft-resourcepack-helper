@@ -2,11 +2,13 @@ import { contributedCommands, internalCommands } from "../commandIds";
 import * as vscode from "vscode";
 import createCitTemplateCommand from "../cit/commands/createCitTemplate";
 import generateCitForCurrentItemCommand from "../cit/commands/generateCitForCurrentItem";
-import openDefaultMcAssetsPath from "../commands/openDefaultMcAssetsPath";
 import type { ModelPreviewCommandRuntime } from "../modelPreview/commands/modelPreviewCommandRuntime";
 import { workspaceResourceCache } from "../services/workspaceResourceCache";
 
 export function registerCommands(context: vscode.ExtensionContext): void {
+  const openDefaultMcAssetsPath = createLazyCommand<[], void>(() =>
+    import("../commands/openDefaultMcAssetsPath.js")
+      .then(module => module.openDefaultMcAssetsPath));
   const createNewResourcePack = createLazyCommand<[], Promise<void>>(() =>
     import("../commands/createNewResourcePack.js")
       .then(module => module.createNewResourcePack));

@@ -23,6 +23,13 @@ interface LegacyFormatRange {
   max: number;
 }
 
+interface OverlayFormatSummary {
+  generatedPath: string;
+  hasFormats: boolean;
+  min: PackFormatVersion | null;
+  legacyFormats: LegacyFormatRange | null;
+}
+
 const modernPackFormatBoundary = 65;
 
 export function validatePackMetadata(
@@ -92,13 +99,21 @@ function validatePackFormatMetadata(
   }
 
   if (hasValidModernRange) {
-    validatePackFormatBoundaryFields(pack, minFormat, maxFormat, supportedFormats, unit, diagnostics);
+    validatePackFormatBoundaryFields(
+      pack,
+      packFormat,
+      minFormat,
+      maxFormat,
+      supportedFormats,
+      unit,
+      diagnostics
+    );
   } else if (packFormat !== null && packFormat >= modernPackFormatBoundary && !hasMinFormat && !hasMaxFormat) {
     pushUnitDiagnostic(
       diagnostics,
       unit,
-      "rsgl.invalidPackFormatField",
-      "pack_format is only for resource pack formats before 65; use min_format and max_format.",
+      "rsgl.incompletePackFormatRange",
+      "Resource packs using format 65 or newer must include min_format and max_format; pack_format may remain as a redundant compatibility field.",
       "warning"
     );
   }
@@ -108,6 +123,7 @@ function validatePackFormatMetadata(
 
 function validatePackFormatBoundaryFields(
   pack: Record<string, JsonValue>,
+  packFormat: number | null,
   minFormat: PackFormatVersion,
   maxFormat: PackFormatVersion,
   supportedFormats: LegacyFormatRange | null,
@@ -120,12 +136,12 @@ function validatePackFormatBoundaryFields(
   const legacyOnly = maxFormat.major < modernPackFormatBoundary;
   const crossesBoundary = minFormat.major < modernPackFormatBoundary && maxFormat.major >= modernPackFormatBoundary;
 
-  if (modernOnly && (hasPackFormat || hasSupportedFormats)) {
+  if (modernOnly && hasSupportedFormats) {
     pushUnitDiagnostic(
       diagnostics,
       unit,
       "rsgl.unsupportedPackFormatFields",
-      "Resource packs that only support pack format 65 or newer must not use pack_format or supported_formats.",
+      "Resource packs that only support pack format 65 or newer must not use supported_formats.",
       "warning"
     );
   }
@@ -136,6 +152,16 @@ function validatePackFormatBoundaryFields(
       unit,
       "rsgl.missingLegacyPackFormat",
       "Resource packs that only support pack formats before 65 must include pack_format.",
+      "warning"
+    );
+  }
+
+  if (legacyOnly && !hasSupportedFormats) {
+    pushUnitDiagnostic(
+      diagnostics,
+      unit,
+      "rsgl.missingPackSupportedFormats",
+      "Resource packs that only support pack formats before 65 must include supported_formats.",
       "warning"
     );
   }
@@ -152,13 +178,26 @@ function validatePackFormatBoundaryFields(
         );
       }
     }
-    if (supportedFormats && supportedFormats.max !== modernPackFormatBoundary - 1) {
+  }
+
+  if (!modernOnly && supportedFormats) {
+    if (supportedFormats.min !== minFormat.major || supportedFormats.max !== maxFormat.major) {
       pushUnitDiagnostic(
         diagnostics,
         unit,
         "rsgl.invalidPackSupportedFormats",
-        "Resource packs crossing the pack format 65 boundary must set supported_formats maximum to 64.",
-        "warning"
+        "supported_formats must use the same minimum and maximum major versions as min_format and max_format."
+      );
+    }
+    if (
+      packFormat !== null
+      && (packFormat < supportedFormats.min || packFormat > supportedFormats.max)
+    ) {
+      pushUnitDiagnostic(
+        diagnostics,
+        unit,
+        "rsgl.invalidPackSupportedFormats",
+        "supported_formats must include pack_format."
       );
     }
   }
@@ -264,6 +303,7 @@ function validatePackOverlays(
   }
 
   const directories = new Set<string>();
+  const formatSummaries: OverlayFormatSummary[] = [];
   for (const [index, entry] of entries.entries()) {
     const entryPath = overlayEntryPath(index);
     const overlay = requireObject(entry, unit, diagnostics, {
@@ -295,8 +335,9 @@ function validatePackOverlays(
     } else {
       directories.add(overlay.directory);
     }
-    validateOverlayRange(overlay, unit, options, diagnostics, entryPath);
+    formatSummaries.push(validateOverlayRange(overlay, unit, options, diagnostics, entryPath));
   }
+  validateOverlayFormatsPresence(formatSummaries, unit, diagnostics);
 }
 
 function validateOverlayRange(
@@ -305,7 +346,7 @@ function validateOverlayRange(
   options: PackMetadataValidationOptions,
   diagnostics: RsglCompileDiagnostic[],
   generatedPath: string
-): void {
+): OverlayFormatSummary {
   const hasMin = Object.hasOwn(overlay, "min_format");
   const hasMax = Object.hasOwn(overlay, "max_format");
   const hasFormats = Object.hasOwn(overlay, "formats");
@@ -333,17 +374,65 @@ function validateOverlayRange(
   if (legacyFormats && legacyFormats.min > legacyFormats.max) {
     pushUnitDiagnostic(diagnostics, unit, "rsgl.invalidOverlayFormatRange", "Overlay formats minimum must not be greater than maximum.", "error", generatedPath);
   }
-
-  const target = targetPackFormatValue(options);
-  if (!target) {
-    return;
+  if (
+    hasValidRange
+    && legacyFormats
+    && legacyFormats.min <= legacyFormats.max
+    && (legacyFormats.min !== min.major || legacyFormats.max !== max.major)
+  ) {
+    pushUnitDiagnostic(
+      diagnostics,
+      unit,
+      "rsgl.invalidOverlayFormatRange",
+      "Overlay formats must use the same minimum and maximum major versions as min_format and max_format.",
+      "error",
+      generatedPath
+    );
   }
 
-  if (hasValidRange && (comparePackFormats(target, min) < 0 || comparePackFormats(target, max) > 0)) {
-    pushUnitDiagnostic(diagnostics, unit, "rsgl.overlayOutsideTargetFormat", "Overlay format range does not include the compile target pack format.", "warning", generatedPath);
-  } else if (!hasValidRange && legacyFormats && legacyFormats.min <= legacyFormats.max) {
-    if (target.major >= modernPackFormatBoundary || target.major < legacyFormats.min || target.major > legacyFormats.max) {
-      pushUnitDiagnostic(diagnostics, unit, "rsgl.overlayOutsideTargetFormat", "Overlay format declarations do not include the compile target pack format.", "warning", generatedPath);
+  const target = targetPackFormatValue(options);
+  if (target) {
+    if (hasValidRange && (comparePackFormats(target, min) < 0 || comparePackFormats(target, max) > 0)) {
+      pushUnitDiagnostic(diagnostics, unit, "rsgl.overlayOutsideTargetFormat", "Overlay format range does not include the compile target pack format.", "warning", generatedPath);
+    } else if (!hasValidRange && legacyFormats && legacyFormats.min <= legacyFormats.max) {
+      if (target.major >= modernPackFormatBoundary || target.major < legacyFormats.min || target.major > legacyFormats.max) {
+        pushUnitDiagnostic(diagnostics, unit, "rsgl.overlayOutsideTargetFormat", "Overlay format declarations do not include the compile target pack format.", "warning", generatedPath);
+      }
+    }
+  }
+
+  return { generatedPath, hasFormats, min, legacyFormats };
+}
+
+function validateOverlayFormatsPresence(
+  entries: readonly OverlayFormatSummary[],
+  unit: ResourceUnit,
+  diagnostics: RsglCompileDiagnostic[]
+): void {
+  const includesLegacyFormats = entries.some(entry =>
+    entry.min
+      ? entry.min.major < modernPackFormatBoundary
+      : (entry.legacyFormats?.min ?? modernPackFormatBoundary) < modernPackFormatBoundary
+  );
+  for (const entry of entries) {
+    if (includesLegacyFormats && !entry.hasFormats) {
+      pushUnitDiagnostic(
+        diagnostics,
+        unit,
+        "rsgl.invalidOverlayFormatRange",
+        "When any overlay supports format 64 or earlier, every overlay entry must include formats.",
+        "error",
+        entry.generatedPath
+      );
+    } else if (!includesLegacyFormats && entry.hasFormats) {
+      pushUnitDiagnostic(
+        diagnostics,
+        unit,
+        "rsgl.invalidOverlayFormatRange",
+        "Overlay entries must omit formats when all overlays support format 65 or newer.",
+        "error",
+        entry.generatedPath
+      );
     }
   }
 }

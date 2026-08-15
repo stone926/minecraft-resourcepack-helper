@@ -48,7 +48,9 @@ describe("resource universe visible migration contract", () => {
       "specialized CIT misses must not fall through to logical Universe resolution"
     );
     assert.ok(scanner.includes("parsePackMetadata"));
-    assert.ok(scanner.includes("overlayApplies"));
+    assert.ok(scanner.includes("selectActiveOverlays"));
+    assert.ok(scanner.includes("targetPackFormat"));
+    assert.ok(scanner.includes("overlaySelection"));
     assert.ok(scanner.includes("effectiveDocuments"));
     assert.strictEqual(scanner.includes('from "../../resourceProject"'), false);
     assert.ok(scanner.includes("PhysicalAssetProjectContextStore"));

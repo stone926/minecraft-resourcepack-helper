@@ -64,21 +64,6 @@
               "$ref": "#/definitions/formatRangeObject"
             }
           ]
-        },
-        "features": {
-          "type": "object",
-          "title": "features 实验性功能",
-          "description": "声明此包启用的实验性 feature flags。",
-          "additionalProperties": true,
-          "properties": {
-            "enabled": {
-              "type": "array",
-              "title": "enabled 启用功能",
-              "items": {
-                "type": "string"
-              }
-            }
-          }
         }
       },
       "anyOf": [

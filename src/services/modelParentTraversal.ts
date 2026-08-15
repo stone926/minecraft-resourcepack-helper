@@ -7,6 +7,8 @@ export type ModelParentAdvanceResult =
   | { kind: "cycle"; fileName: string }
   | { kind: "depth"; fileName: string; maxDepth: number };
 
+export type ModelParentTraversalIssue = Exclude<ModelParentAdvanceResult, { kind: "next" }>;
+
 /** Shared cycle/depth state for synchronous diagnostics and async preview traversal. */
 export class ModelParentTraversal {
   private readonly visited = new Set<string>();

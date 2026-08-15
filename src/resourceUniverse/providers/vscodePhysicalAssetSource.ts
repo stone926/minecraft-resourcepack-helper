@@ -1,7 +1,9 @@
 import * as vscode from "vscode";
 import {
-  overlayApplies,
   parsePackMetadata,
+  resourceMatchesFilters,
+  selectActiveOverlays,
+  type ResourceFilter,
   uniqueValues
 } from "../../../packages/mc-assets/src";
 import {
@@ -63,12 +65,14 @@ interface ScannableLayer {
   descriptor: ResourceLayerDescriptor;
   /** Effective root order: active overlays first, then configured/base roots. */
   assetsRootUris: readonly SerializedResourceUri[];
+  filters: readonly ResourceFilter[];
 }
 
 type LayerAssetsRootDiscovery =
   | {
       status: "ready";
       assetsRootUris: readonly SerializedResourceUri[];
+      filters: readonly ResourceFilter[];
       complete: boolean;
     }
   | { status: "unsupported" | "unavailable" };
@@ -188,7 +192,11 @@ export class VscodePhysicalAssetSource implements
       return roots;
     }
     return roots.complete
-      ? { status: "ready", assetsRootUris: roots.assetsRootUris }
+      ? {
+          status: "ready",
+          assetsRootUris: roots.assetsRootUris,
+          filters: roots.filters
+        }
       : { status: "unavailable" };
   }
 
@@ -230,6 +238,7 @@ export class VscodePhysicalAssetSource implements
       const roots = await packAssetsRoots(
         context.outputPackRootUri,
         [context.outputAssetsRootUri],
+        context,
         cancellation
       );
       return { status: "ready", ...roots };
@@ -250,16 +259,30 @@ export class VscodePhysicalAssetSource implements
     }
 
     const configured = await configuredAssetsRoots(layerRootUri, cancellation);
-    if (configured.assetsRootUris.length === 0) {
-      return { status: "unavailable" };
+    const packRoot = configured.assetsRootUris.length > 0
+      ? resourceProjectUriParent(configured.assetsRootUris[0])
+      : configuredPackRootUri(layerRootUri);
+    let baseRoots = configured.assetsRootUris;
+    if (baseRoots.length === 0 && packRoot) {
+      const metadataProbe = await probeUriType(joinResourceProjectUri(
+        packRoot,
+        packMetadataFileName
+      ));
+      if (
+        metadataProbe.status !== "ready"
+        || (metadataProbe.type & vscode.FileType.File) === 0
+      ) {
+        return { status: "unavailable" };
+      }
+      baseRoots = [joinResourceProjectUri(packRoot, "assets")];
     }
-    const packRoot = resourceProjectUriParent(configured.assetsRootUris[0]);
     const roots = packRoot
-      ? await packAssetsRoots(packRoot, configured.assetsRootUris, cancellation)
+      ? await packAssetsRoots(packRoot, baseRoots, context, cancellation)
       : configured;
     return {
       status: "ready",
       assetsRootUris: roots.assetsRootUris,
+      filters: roots.filters,
       complete: configured.complete && roots.complete
     };
   }
@@ -313,13 +336,17 @@ export class VscodePhysicalAssetSource implements
       this.scanLayer(layer, openDocumentsByUri, signal)
     ));
     const failedUris = [...unavailableUris, ...scanned.flatMap(result => result.failedUris)];
-    const documents = scanned.flatMap(result => result.documents);
+    const documents = markFilteredDocuments(layers, scanned);
     const ownedOutputPaths = this.ownedOutputLookup?.getOwnedOutputPaths(request.projectId)
       ?? new Set<string>();
     const ownershipRevision = this.ownedOutputLookup?.getOwnershipRevision(request.projectId);
     const revision = createStableResourceProjectRevision("physical-snapshot", {
       contextRevision: context.contextRevision,
-      documents: documents.map(document => [document.uri, document.revision]),
+      documents: documents.map(document => [
+        document.uri,
+        document.revision,
+        document.blockedByLayerIds ?? []
+      ]),
       failedUris,
       ownershipRevision: ownershipRevision ?? null
     });
@@ -360,7 +387,11 @@ export class VscodePhysicalAssetSource implements
         unavailableUris.push(descriptor.rootUri);
         continue;
       }
-      layers.push({ descriptor, assetsRootUris: roots.assetsRootUris });
+      layers.push({
+        descriptor,
+        assetsRootUris: roots.assetsRootUris,
+        filters: roots.filters
+      });
       if (!roots.complete) {
         unavailableUris.push(descriptor.rootUri);
       }
@@ -435,6 +466,52 @@ export class VscodePhysicalAssetSource implements
   }
 }
 
+function markFilteredDocuments(
+  layers: readonly ScannableLayer[],
+  scans: readonly {
+    documents: readonly PhysicalAssetScannedDocument[];
+  }[]
+): PhysicalAssetScannedDocument[] {
+  const higherPriorityFilters: Array<{
+    layerId: string;
+    filters: readonly ResourceFilter[];
+  }> = [];
+  const documents: PhysicalAssetScannedDocument[] = [];
+
+  layers.forEach((layer, index) => {
+    for (const document of scans[index]?.documents ?? []) {
+      const location = packResourceLocation(document.outputPath);
+      const blockedByLayerIds = location
+        ? higherPriorityFilters
+          .filter(entry => resourceMatchesFilters(
+            entry.filters,
+            location.namespace,
+            location.resourcePath
+          ))
+          .map(entry => entry.layerId)
+        : [];
+      documents.push(blockedByLayerIds.length > 0
+        ? { ...document, blockedByLayerIds }
+        : document);
+    }
+    higherPriorityFilters.push({
+      layerId: layer.descriptor.layerId,
+      filters: layer.filters
+    });
+  });
+
+  return documents;
+}
+
+function packResourceLocation(
+  outputPath: string
+): { namespace: string; resourcePath: string } | null {
+  const segments = outputPath.replaceAll("\\", "/").split("/").filter(Boolean);
+  return segments.length >= 3 && segments[0] === "assets"
+    ? { namespace: segments[1], resourcePath: segments.slice(2).join("/") }
+    : null;
+}
+
 async function collectLayerFileUris(
   rootUri: SerializedResourceUri,
   signal: AbortSignal
@@ -451,8 +528,10 @@ async function collectLayerFileUris(
     let entries: [string, vscode.FileType][];
     try {
       entries = await vscode.workspace.fs.readDirectory(current.uri);
-    } catch {
-      failedUris.push(current.uri.toString());
+    } catch (error) {
+      if (!isFileNotFoundError(error)) {
+        failedUris.push(current.uri.toString());
+      }
       continue;
     }
     for (const [name, type] of entries) {
@@ -538,6 +617,7 @@ function indexOpenTextDocuments(
 
 interface AssetsRootDiscovery {
   assetsRootUris: SerializedResourceUri[];
+  filters: ResourceFilter[];
   /** False when an I/O failure makes the effective root order uncertain. */
   complete: boolean;
 }
@@ -573,12 +653,24 @@ async function configuredAssetsRoots(
       existing.push(candidate);
     }
   }
-  return { assetsRootUris: existing, complete };
+  return { assetsRootUris: existing, filters: [], complete };
+}
+
+function configuredPackRootUri(rootUri: SerializedResourceUri): SerializedResourceUri | null {
+  if (resourceProjectUriBasename(rootUri).toLowerCase() === "assets") {
+    return resourceProjectUriParent(rootUri);
+  }
+  const parent = resourceProjectUriParent(rootUri);
+  if (parent && resourceProjectUriBasename(parent).toLowerCase() === "assets") {
+    return resourceProjectUriParent(parent);
+  }
+  return rootUri;
 }
 
 async function packAssetsRoots(
   packRootUri: SerializedResourceUri,
   baseRoots: readonly SerializedResourceUri[],
+  context: Pick<ResourcePackProjectContextDto, "targetPackFormat" | "overlaySelection">,
   signal: AbortSignal
 ): Promise<AssetsRootDiscovery> {
   throwIfAborted(signal, "Physical asset scan was cancelled.");
@@ -608,7 +700,15 @@ async function packAssetsRoots(
   }
   throwIfAborted(signal, "Physical asset scan was cancelled.");
   const overlays = metadata
-    ? metadata.overlays.filter(overlayApplies).map(overlay =>
+    ? selectActiveOverlays(metadata.overlays, {
+        targetPackFormat: context.targetPackFormat
+          ? {
+              major: context.targetPackFormat.major,
+              minor: context.targetPackFormat.minor ?? 0
+            }
+          : undefined,
+        overlaySelection: context.overlaySelection
+      }).map(overlay =>
         joinResourceProjectUri(packRootUri, overlay.directory, "assets")
       ).reverse()
     : [];
@@ -631,6 +731,7 @@ async function packAssetsRoots(
   }
   return {
     assetsRootUris: result.length > 0 ? result : [...baseRoots],
+    filters: metadata?.filters ?? [],
     complete
   };
 }

@@ -8,6 +8,7 @@ import {
   loadModelParentChain,
   loadModelParentChainAsync,
   modelSourceForFile,
+  type CachedModelParentChain,
   type CachedModelDocument,
   type CachedTextureVariableDefinition,
   type ModelParentChainHost
@@ -48,7 +49,7 @@ interface PreviewResolvedModelCacheEntry {
 export class ModelResourceCache {
   private readonly modelParentChainCache = new LruCache<
     string,
-    VerifiedModelCacheEntry<CachedModelDocument[]>
+    VerifiedModelCacheEntry<CachedModelParentChain>
   >(
     1024,
     key => this.modelCacheDependencies.release(`chain\0${key}`)
@@ -76,6 +77,15 @@ export class ModelResourceCache {
     configuration: ResourceConfiguration,
     source = modelSourceForFile(document.fileName)
   ): CachedModelDocument[] {
+    return this.getModelParentChainResult(document, ast, configuration, source).models;
+  }
+
+  getModelParentChainResult(
+    document: CacheTextDocument,
+    ast: JsonDocumentNode,
+    configuration: ResourceConfiguration,
+    source = modelSourceForFile(document.fileName)
+  ): CachedModelParentChain {
     const key = this.modelCacheKey(document, source, configuration);
     const generation = this.state.getResourceFsGeneration();
     const cached = this.modelParentChainCache.get(key);
@@ -111,6 +121,15 @@ export class ModelResourceCache {
     configuration: ResourceConfiguration,
     source = modelSourceForFile(document.fileName)
   ): Promise<CachedModelDocument[]> {
+    return (await this.getModelParentChainResultAsync(document, ast, configuration, source)).models;
+  }
+
+  async getModelParentChainResultAsync(
+    document: CacheTextDocument,
+    ast: JsonDocumentNode,
+    configuration: ResourceConfiguration,
+    source = modelSourceForFile(document.fileName)
+  ): Promise<CachedModelParentChain> {
     const key = this.modelCacheKey(document, source, configuration);
     const generation = this.state.getResourceFsGeneration();
     const cached = this.modelParentChainCache.get(key);
@@ -120,7 +139,7 @@ export class ModelResourceCache {
     }
 
     this.metrics.miss("modelParentChain");
-    let chain: CachedModelDocument[] = [];
+    let chain: CachedModelParentChain = { models: [], issue: null };
     for (let attempt = 0; attempt < 2; attempt++) {
       const mutationGeneration = this.state.getResourceMutationGeneration();
       const dependencies = new Set<string>([document.fileName]);

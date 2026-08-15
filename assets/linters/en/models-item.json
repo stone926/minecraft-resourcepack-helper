@@ -48,7 +48,7 @@
       "title": "Elements",
       "description": "Lists all elements of the model. These elements can only be cuboids. When both parent and elements are set, this model's elements will override the parent model's elements.",
       "type": "array",
-      "minimum": 1,
+      "minItems": 1,
       "items": {
         "$ref": "./models-block.json#/definitions/element"
       }
@@ -64,7 +64,7 @@
       "description": "Specifies different models to override based on item predicate conditions. Deprecated since Java Edition 1.21.4 in favor of item model mappings in assets/<namespace>/items/*.json.",
       "deprecationMessage": "models/item overrides are deprecated in Java Edition 1.21.4+. Use item model mappings in the items directory instead.",
       "type": "array",
-      "minimum": 1,
+      "minItems": 1,
       "items": {
         "additionalProperties": false,
         "type": "object",

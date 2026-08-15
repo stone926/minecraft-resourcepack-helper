@@ -36,6 +36,8 @@ export interface ResourceProducer {
   physicalOrigins: readonly ResourceLocation[];
   materializationState: ResourceMaterializationState;
   outputPath?: string;
+  /** Higher-priority layers whose pack filters exclude this producer from an effective stack. */
+  blockedByLayerIds?: readonly string[];
   revision: string;
 }
 

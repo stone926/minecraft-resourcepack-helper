@@ -318,13 +318,7 @@ function mergeDisplay(
 ): ReturnType<typeof normalizeDisplayTransforms> {
   return normalizeDisplayTransforms({
     ...base,
-    ...Object.fromEntries(Object.entries(overrides).map(([name, transform]) => [
-      name,
-      {
-        ...base[name],
-        ...transform
-      }
-    ]))
+    ...overrides
   });
 }
 

@@ -6,6 +6,7 @@ import {
   isPackFormatVersion,
   promptMsg
 } from "./constants";
+import { isValidResourcePackNamespace } from "./resourcePackScaffold";
 
 export interface ResourcePackAttributes {
   namespace: string;
@@ -18,7 +19,12 @@ export async function collectResourcePackAttributes(): Promise<ResourcePackAttri
   const namespace = await vscode.window.showInputBox({
     prompt: localize(promptMsg.namespace),
     value: defaultPackAttributes.namespace,
-    validateInput: input => input.trim().length === 0 ? localize(errorMsg.emptyInput) : null
+    validateInput: input => {
+      if (input.trim().length === 0) {
+        return localize(errorMsg.emptyInput);
+      }
+      return isValidResourcePackNamespace(input) ? null : localize(errorMsg.invalidNamespace);
+    }
   });
   if (namespace === undefined) {
     return null;
@@ -36,5 +42,5 @@ export async function collectResourcePackAttributes(): Promise<ResourcePackAttri
   const description = await vscode.window.showInputBox({
     prompt: localize(promptMsg.description)
   });
-  return description === undefined ? null : { namespace, packFormat, description };
+  return description === undefined ? null : { namespace: namespace.trim(), packFormat, description };
 }

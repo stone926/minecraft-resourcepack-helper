@@ -74,7 +74,7 @@
       "type": "object",
       "required": ["model"],
       "additionalProperties": false,
-      "minItems": 1,
+      "minProperties": 1,
       "properties": {
         "model": {
           "type": "string",
@@ -107,7 +107,7 @@
       "type": "object",
       "required": ["model"],
       "additionalProperties": false,
-      "minItems": 1,
+      "minProperties": 1,
       "properties": {
         "model": {
           "type": "string",

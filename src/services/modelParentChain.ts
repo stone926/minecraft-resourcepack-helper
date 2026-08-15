@@ -7,7 +7,10 @@ import {
 import { modelSourceForFileName } from "../resources/resourceSurfaceRegistry";
 import type { ResourceFileRequest } from "../../packages/mc-assets/src";
 import type { ResourceConfiguration, ResourcePathResolution } from "./resourceCacheTypes";
-import { ModelParentTraversal } from "./modelParentTraversal";
+import {
+  ModelParentTraversal,
+  type ModelParentTraversalIssue
+} from "./modelParentTraversal";
 
 export interface CachedModelDocument {
   ast: JsonDocumentNode;
@@ -19,6 +22,11 @@ export interface CachedTextureVariableDefinition {
   fileName: string;
   line: number;
   character: number;
+}
+
+export interface CachedModelParentChain {
+  models: CachedModelDocument[];
+  issue: ModelParentTraversalIssue | null;
 }
 
 export interface ModelParentChainHost {
@@ -38,13 +46,14 @@ export function loadModelParentChain(
   source: string,
   configuration: ResourceConfiguration,
   onDependency?: (fileName: string) => void
-): CachedModelDocument[] {
+): CachedModelParentChain {
   const models: CachedModelDocument[] = [{
     ast,
     fileName,
     source
   }];
   const traversal = new ModelParentTraversal(fileName);
+  let issue: ModelParentTraversalIssue | null = null;
 
   while (true) {
     const current = models[models.length - 1];
@@ -66,6 +75,7 @@ export function loadModelParentChain(
 
     const advance = traversal.advance(parentFileName);
     if (advance.kind !== "next") {
+      issue = advance;
       break;
     }
 
@@ -81,7 +91,7 @@ export function loadModelParentChain(
     });
   }
 
-  return models;
+  return { models, issue };
 }
 
 /**
@@ -95,9 +105,10 @@ export async function loadModelParentChainAsync(
   source: string,
   configuration: ResourceConfiguration,
   onDependency?: (fileName: string) => void
-): Promise<CachedModelDocument[]> {
+): Promise<CachedModelParentChain> {
   const models: CachedModelDocument[] = [{ ast, fileName, source }];
   const traversal = new ModelParentTraversal(fileName);
+  let issue: ModelParentTraversalIssue | null = null;
 
   while (true) {
     const current = models[models.length - 1];
@@ -119,6 +130,7 @@ export async function loadModelParentChainAsync(
 
     const advance = traversal.advance(parentFileName);
     if (advance.kind !== "next") {
+      issue = advance;
       break;
     }
 
@@ -133,7 +145,7 @@ export async function loadModelParentChainAsync(
     });
   }
 
-  return models;
+  return { models, issue };
 }
 
 export function collectModelTextureVariableDefinitions(chain: CachedModelDocument[]): Map<string, CachedTextureVariableDefinition> {

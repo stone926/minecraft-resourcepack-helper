@@ -1,4 +1,5 @@
 import * as assert from "node:assert/strict";
+import type { ResourceFilter } from "../../../packages/mc-assets/src";
 import type {
   ResourceLayerDescriptor,
   ResourcePackProjectContextDto
@@ -144,6 +145,62 @@ describe("exact physical asset Definition resolver", () => {
     ]);
   });
 
+  it("applies pack filters only to lower layers in the requested stack", async () => {
+    const context = projectContext();
+    const host = new FakeDefinitionHost(context, {
+      filters: new Map([
+        ["local", [
+          { namespace: "demo", path: "models/block/blocked\\.json" },
+          { namespace: "demo", path: "models/block/own\\.json" }
+        ]],
+        ["custom-high", [{ namespace: "demo", path: "models/block/custom_blocked\\.json" }]]
+      ]),
+      files: [
+        "file:///custom-high/assets/demo/models/block/blocked.json",
+        "file:///custom-low/assets/demo/models/block/custom_blocked.json",
+        "file:///pack/assets/demo/models/block/own.json"
+      ]
+    });
+
+    const effective = await resolveExactPhysicalAssetDefinition({
+      context,
+      target: { kind: "model", id: "demo:block/blocked" },
+      scope: "effective"
+    }, host);
+    assert.strictEqual(effective.status, "missing");
+    assert.deepStrictEqual(host.probes, [
+      "file:///pack/assets/demo/models/block/blocked.json"
+    ]);
+
+    host.probes.length = 0;
+    const custom = await resolveExactPhysicalAssetDefinition({
+      context,
+      target: { kind: "model", id: "demo:block/blocked" },
+      scope: "custom"
+    }, host);
+    assert.strictEqual(custom.status, "resolved", "local filters do not alter an explicit custom-only lookup");
+    assert.strictEqual(custom.status === "resolved" && custom.definition.layer.layerId, "custom-high");
+
+    host.probes.length = 0;
+    const customBlocked = await resolveExactPhysicalAssetDefinition({
+      context,
+      target: { kind: "model", id: "demo:block/custom_blocked" },
+      scope: "custom"
+    }, host);
+    assert.strictEqual(customBlocked.status, "missing");
+    assert.deepStrictEqual(host.probes, [
+      "file:///custom-high/assets/demo/models/block/custom_blocked.json"
+    ]);
+
+    host.probes.length = 0;
+    const own = await resolveExactPhysicalAssetDefinition({
+      context,
+      target: { kind: "model", id: "demo:block/own" },
+      scope: "effective"
+    }, host);
+    assert.strictEqual(own.status, "resolved", "a pack filter must not hide the defining pack's resource");
+  });
+
   it("falls back before lower-priority layers when layer or target evidence is unavailable", async () => {
     const context = projectContext();
     const unsupported = new FakeDefinitionHost(context, {
@@ -236,6 +293,7 @@ describe("exact physical asset Definition resolver", () => {
 
 interface FakeDefinitionHostOptions {
   roots?: ReadonlyMap<string, readonly string[]>;
+  filters?: ReadonlyMap<string, readonly ResourceFilter[]>;
   layerStatuses?: ReadonlyMap<string, "unsupported" | "unavailable">;
   files?: readonly string[];
   probes?: ReadonlyMap<string, PhysicalAssetDefinitionTargetProbe>;
@@ -269,7 +327,8 @@ class FakeDefinitionHost implements PhysicalAssetDefinitionResolverHost {
     return {
       status: "ready",
       assetsRootUris: this.options.roots?.get(layer.layerId)
-        ?? [`${layer.rootUri}/assets`]
+        ?? [`${layer.rootUri}/assets`],
+      filters: this.options.filters?.get(layer.layerId) ?? []
     };
   }
 

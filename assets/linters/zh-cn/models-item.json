@@ -48,7 +48,7 @@
       "title": "elements 元素",
       "description": "列出模型的所有元素,这些元素只能为长方体形态。如果同时设置了parent和elements，此模型的elements标签将覆盖父类模型parent下的elements标签",
       "type": "array",
-      "minimum": 1,
+      "minItems": 1,
       "items": {
         "$ref": "./models-block.json#/definitions/element"
       }
@@ -64,7 +64,7 @@
       "description": "指定基于物品情况标签而覆写不同模型的情况。Java版1.21.4起已由 assets/<namespace>/items/*.json 中的物品模型映射替代。",
       "deprecationMessage": "models/item overrides 在 Java版1.21.4+ 已弃用，请使用 items 目录中的物品模型映射。",
       "type": "array",
-      "minimum": 1,
+      "minItems": 1,
       "items": {
         "additionalProperties": false,
         "type": "object",

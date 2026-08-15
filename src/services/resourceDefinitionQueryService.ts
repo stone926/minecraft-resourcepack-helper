@@ -131,7 +131,10 @@ export class ResourceDefinitionQueryService {
     if (!ensured.context) {
       return { coverage: ensured.coverage, locations: [] };
     }
-    const locations = this.universe.getIncoming(target)
+    const locations = this.universe.getIncoming(
+      target,
+      createResourceResolutionContext(ensured.context, [physicalProviderId])
+    )
       .filter(edge =>
         edge.projectId === ensured.context!.projectId
         && edge.providerId === physicalProviderId)

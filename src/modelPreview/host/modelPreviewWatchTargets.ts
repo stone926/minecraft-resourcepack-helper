@@ -6,11 +6,18 @@ import {
 
 /**
  * Surfaces whose files can affect an open model preview: models, CIT models,
- * textures, CIT properties, and pack metadata. Kept as ids so the preview
+ * textures, texture metadata, CIT properties, and pack metadata. Kept as ids so the preview
  * watcher derives its globs from the single resource-surface definition
  * instead of maintaining a parallel hand-written list.
  */
-const previewWatcherSurfaceIds = ["models", "citModel", "textureAssets", "citProperties", "packMetadata"];
+const previewWatcherSurfaceIds = [
+  "models",
+  "citModel",
+  "textureAssets",
+  "textureMetadata",
+  "citProperties",
+  "packMetadata"
+];
 
 /**
  * Workspace watcher globs for model previews, derived from the resource

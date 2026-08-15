@@ -32,8 +32,8 @@ const semanticDiagnosticsHost: SemanticDiagnosticsHost = {
   },
   getPackImageResourceIssues: packRoot => getPackImageResourceIssues(packRoot, packImageResourceHost),
   getModelParentChain: (document, ast, configuration) =>
-    workspaceResourceCache.getModelParentChainAsync(document, ast, configuration),
-  getSoundEvents: soundsJsonPath => workspaceResourceCache.getSoundEvents(soundsJsonPath)
+    workspaceResourceCache.getModelParentChainResultAsync(document, ast, configuration),
+  getSoundEventGraph: soundsJsonPath => workspaceResourceCache.getSoundEventGraphAsync(soundsJsonPath)
 };
 
 export async function getSemanticResourceDiagnostics(

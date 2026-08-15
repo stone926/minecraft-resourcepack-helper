@@ -1,3 +1,4 @@
+import * as path from "node:path";
 import { workspaceResourceCache } from "../../services/workspaceResourceCache";
 import type { ResourceReference } from "../../utils/resourceReferences";
 import { citResourceTypeFor } from "../citAssetResolver";
@@ -10,6 +11,7 @@ export interface CitPackRootResolver {
 }
 
 export interface MissingCitResourcePlan {
+  packRoot: string;
   targetPath: string;
   content: Uint8Array;
 }
@@ -26,6 +28,24 @@ export class MissingCitResourcePlanner {
   ) {}
 
   public targetPath(documentFileName: string, reference: ResourceReference): string | null {
+    return this.resolveTarget(documentFileName, reference)?.targetPath ?? null;
+  }
+
+  public plan(documentFileName: string, reference: ResourceReference): MissingCitResourcePlan | null {
+    const target = this.resolveTarget(documentFileName, reference);
+    if (!target) {
+      return null;
+    }
+    return {
+      ...target,
+      content: defaultContentFor(reference)
+    };
+  }
+
+  private resolveTarget(
+    documentFileName: string,
+    reference: ResourceReference
+  ): Pick<MissingCitResourcePlan, "packRoot" | "targetPath"> | null {
     const resourceType = resourceTypeFor(reference);
     if (!resourceType) {
       return null;
@@ -36,24 +56,29 @@ export class MissingCitResourcePlanner {
       return null;
     }
 
-    return getCitPathCandidates(
+    const candidates = getCitPathCandidates(
       documentFileName,
       packRoot,
       reference.value,
       resourceType
-    )[0] ?? null;
-  }
-
-  public plan(documentFileName: string, reference: ResourceReference): MissingCitResourcePlan | null {
-    const targetPath = this.targetPath(documentFileName, reference);
+    );
+    const targetPath = candidates.find(candidate => isPathWithinPack(packRoot, candidate));
     if (!targetPath) {
       return null;
     }
     return {
-      targetPath,
-      content: defaultContentFor(reference)
+      packRoot,
+      targetPath
     };
   }
+}
+
+function isPathWithinPack(packRoot: string, candidate: string): boolean {
+  const relative = path.relative(path.resolve(packRoot), path.resolve(candidate));
+  return relative.length > 0
+    && !path.isAbsolute(relative)
+    && relative !== ".."
+    && !relative.startsWith(`..${path.sep}`);
 }
 
 function resourceTypeFor(reference: ResourceReference): CitResourceType | null {

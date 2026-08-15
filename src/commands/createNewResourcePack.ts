@@ -4,7 +4,7 @@ import * as path from "node:path";
 import { localize } from "../i18n/runtime";
 import { errorMsg, promptMsg } from "./constants";
 import { collectResourcePackAttributes } from "./resourcePackInputs";
-import { writePackScaffold } from "./resourcePackScaffold";
+import { isValidPackDirectoryName, writePackScaffold } from "./resourcePackScaffold";
 import { pickWorkspaceFolder } from "./workspace";
 
 export async function createNewResourcePack() {
@@ -20,7 +20,11 @@ export async function createNewResourcePack() {
         return localize(errorMsg.emptyInput);
       }
 
-      if (fs.existsSync(path.join(rootFolder.uri.fsPath, input))) {
+      if (!isValidPackDirectoryName(input)) {
+        return localize(errorMsg.invalidPackName);
+      }
+
+      if (fs.existsSync(path.join(rootFolder.uri.fsPath, input.trim()))) {
         return localize(errorMsg.folderAlreadyExist);
       }
 
@@ -36,7 +40,7 @@ export async function createNewResourcePack() {
     return;
   }
 
-  const packPath = path.join(rootFolder.uri.fsPath, packName);
+  const packPath = path.join(rootFolder.uri.fsPath, packName.trim());
   writePackScaffold(
     packPath,
     attributes.namespace,

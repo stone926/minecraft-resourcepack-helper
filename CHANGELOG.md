@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- fix: align pack filters, overlay selection, model inheritance, schemas, and diagnostics with Minecraft 26.2 semantics.
+- fix: harden model-preview refreshes, resource-pack scaffolding, CIT creation, RSGL parsing, and CLI argument boundaries.
+- perf: move CIT inventory traversal and archive decompression/CRC work off synchronous extension-host paths.
 - refactor: integrate RSGL language tooling, build commands, resource providers, and ownership-aware materialization into one lazy, isolated VSIX.
 - feat: give `rsgl.config.json` one `root`/pack-root `outDir` meaning across VS Code, LSP, CLI, mixed handwritten/generated layouts, and resource graphs.
 - feat: unify physical, live RSGL, local, custom, and vanilla resources behind one project context and resource universe for cross-language Definition, incoming/outgoing graph edges, and missing-resource diagnostics.

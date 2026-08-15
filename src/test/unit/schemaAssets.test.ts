@@ -129,14 +129,24 @@ describe("schema assets", () => {
     const objectTextureReference = assertJsonObjectValue(textureReferenceBranches[1], "textureReference.oneOf[1]");
     const textureSprite = getObjectAt(objectTextureReference, ["properties", "sprite"]);
     assert.strictEqual(getObjectAt(textureSprite, ["not"]).pattern, "^#");
+
+    const displayScaleItems = getArrayProperty(getObjectAt(schema, ["definitions", "displayScale"]), "items");
+    assert.deepStrictEqual(
+      displayScaleItems.map((item, index) => assertJsonObjectValue(item, `displayScale.items[${index}]`).minimum),
+      [-4, -4, -4]
+    );
+    assert.match(String(getObjectAt(schema, ["properties", "ambientocclusion"]).description), /overrides.*parent/i);
   });
 
   it("allows z-axis rotation in blockstate model entries", () => {
     const schema = readJsonFile<JsonObject>(path.join(EN_LINTER, "blockstates.json"));
 
     for (const definition of ["model", "model+weight"]) {
-      const zRotation = getObjectAt(schema, ["definitions", definition, "properties", "z"]);
+      const modelDefinition = getObjectAt(schema, ["definitions", definition]);
+      const zRotation = getObjectAt(modelDefinition, ["properties", "z"]);
       assert.strictEqual(zRotation.$ref, "#/definitions/degree");
+      assert.strictEqual(modelDefinition.minProperties, 1);
+      assert.strictEqual(modelDefinition.minItems, undefined);
     }
   });
 
@@ -146,10 +156,12 @@ describe("schema assets", () => {
 
     for (const distanceField of ["near_distance", "far_distance"]) {
       const field = getObjectAt(properties, [distanceField]);
-      assert.strictEqual(field.type, "number");
+      assert.strictEqual(field.type, "integer");
       assert.strictEqual(field.minimum, 0);
       assert.strictEqual(field.maximum, 60000000);
     }
+    assert.strictEqual(getObjectAt(properties, ["near_distance"]).default, 128);
+    assert.strictEqual(getObjectAt(properties, ["far_distance"]).default, 332);
   });
 
   it("covers current equipment layer fields and preset layer names", () => {
@@ -196,6 +208,15 @@ describe("schema assets", () => {
       const darkenedCutoutMipmap = getObjectAt(schema, ["properties", "texture", "properties", "darkened_cutout_mipmap"]);
       assert.strictEqual(darkenedCutoutMipmap.type, "boolean");
 
+      for (const dimension of ["width", "height"]) {
+        const field = getObjectAt(schema, ["properties", "animation", "properties", dimension]);
+        const branches = getArrayProperty(field, "oneOf").map((branch, index) =>
+          assertJsonObjectValue(branch, `animation.${dimension}.oneOf[${index}]`)
+        );
+        assert.strictEqual(branches[0].const, -1);
+        assert.strictEqual(branches[1].minimum, 1);
+      }
+
       const mipmapStrategy = getObjectAt(schema, ["properties", "texture", "properties", "mipmap_strategy"]);
       assert.deepStrictEqual(mipmapStrategy.enum, ["auto", "mean", "dark_cutout", "cutout", "strict_cutout"]);
 
@@ -240,6 +261,17 @@ describe("schema assets", () => {
 
     const uniformType = getObjectAt(schema, ["definitions", "uniform", "properties", "type"]);
     assert.deepStrictEqual(uniformType.enum, ["float", "int", "ivec3", "vec2", "vec3", "vec4", "matrix4x4"]);
+
+    const inputDescription = String(getObjectAt(inputProperties, ["target"]).description);
+    for (const target of ["main", "translucent", "item_entity", "particles", "weather", "clouds", "entity_outline"]) {
+      assert.ok(inputDescription.includes(`minecraft:${target}`), target);
+    }
+    assert.strictEqual(inputDescription.includes("minecraft:depth"), false);
+    assert.strictEqual(inputDescription.includes("minecraft:emissive"), false);
+    assert.match(
+      String(getObjectAt(schema, ["definitions", "pass", "properties", "output"]).description),
+      /minecraft:main.*custom target.*read-only inputs/i
+    );
   });
 
   it("covers current warning and compliance metadata constraints", () => {
@@ -437,7 +469,14 @@ describe("schema assets", () => {
       getArrayProperty(getObjectAt(atlasSchema, ["definitions", "directorySource"]), "allOf")[1],
       "directorySource.allOf[1]"
     );
-    assert.deepStrictEqual(getStringArrayProperty(directorySourceShape, "required"), ["type", "source"]);
+    assert.deepStrictEqual(getStringArrayProperty(directorySourceShape, "required"), ["type", "source", "prefix"]);
+
+    const itemModelSchema = readJsonFile<JsonObject>(path.join(EN_LINTER, "models-item.json"));
+    for (const property of ["elements", "overrides"]) {
+      const arraySchema = getObjectAt(itemModelSchema, ["properties", property]);
+      assert.strictEqual(arraySchema.minItems, 1);
+      assert.strictEqual(arraySchema.minimum, undefined);
+    }
   });
 
   it("uses 88.0 pack defaults and constrains overlay directories", () => {
@@ -450,6 +489,7 @@ describe("schema assets", () => {
 
     const directory = getObjectAt(schema, ["definitions", "overlayEntry", "properties", "directory"]);
     assert.strictEqual(directory.pattern, "^[a-z0-9_-]+$");
+    assert.strictEqual(Object.hasOwn(getObjectAt(schema, ["properties", "pack", "properties"]), "features"), false);
   });
 
   it("splits font providers by type with modern ranges", () => {
@@ -463,13 +503,25 @@ describe("schema assets", () => {
     );
     assert.deepStrictEqual(getStringArrayProperty(bitmapShape, "required"), ["type", "file", "chars", "ascent"]);
 
-    const shiftItem = getObjectAt(schema, ["definitions", "providerBase", "properties", "shift", "items"]);
+    const providerProperties = getObjectAt(schema, ["definitions", "providerBase", "properties"]);
+    const ascent = getObjectAt(providerProperties, ["ascent"]);
+    assert.strictEqual(ascent.type, "integer");
+    assert.strictEqual(ascent.default, undefined);
+    const height = getObjectAt(providerProperties, ["height"]);
+    assert.strictEqual(height.type, "integer");
+    assert.strictEqual(height.minimum, 1);
+    assert.strictEqual(height.default, 8);
+
+    const shiftItem = getObjectAt(providerProperties, ["shift", "items"]);
+    assert.strictEqual(shiftItem.type, "number");
     assert.strictEqual(shiftItem.minimum, -512);
     assert.strictEqual(shiftItem.maximum, 512);
 
     const left = getObjectAt(schema, ["definitions", "providerBase", "properties", "size_overrides", "items", "properties", "left"]);
     assert.strictEqual(left.minimum, 0);
     assert.strictEqual(left.maximum, 32);
+    const sizeOverrideProperties = getObjectAt(providerProperties, ["size_overrides", "items", "properties"]);
+    assert.strictEqual(Object.hasOwn(sizeOverrideProperties, "ranges"), false);
   });
 
   it("zh-cn schemas have matching structure with en schemas", () => {

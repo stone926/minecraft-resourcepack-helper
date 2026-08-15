@@ -16,6 +16,7 @@ import {
   getResourceSurfaceDocumentKind,
   getResourceWatcherGlob,
   getResourceWatcherPatterns,
+  getTextResourceFileKind,
   isResourceSurfaceFile,
   resourceSurfaceRegistry,
   type ResourceSchemaRegistration,
@@ -57,10 +58,13 @@ describe("resource surface registry", () => {
       .sort((left, right) => left.id.localeCompare(right.id));
 
     assert.deepStrictEqual(semanticSurfaces, [
+      { id: "atlases", kind: "atlas" },
       { id: "models", kind: "model" },
       { id: "packMetadata", kind: "packMetadata" },
       { id: "postEffect", kind: "postEffect" },
-      { id: "sounds", kind: "sounds" }
+      { id: "sounds", kind: "sounds" },
+      { id: "textureMetadata", kind: "textureMetadata" },
+      { id: "waypointStyle", kind: "waypointStyle" }
     ]);
     for (const surface of semanticSurfaceDescriptors) {
       assert.strictEqual(surface.language, "json", `${surface.id} must preserve the JSON language gate`);
@@ -84,6 +88,58 @@ describe("resource surface registry", () => {
     assert.strictEqual(getResourceSemanticDiagnosticsKind(path.join("pack", "pack.mcmeta"), "plaintext"), null);
     assert.strictEqual(
       getResourceSemanticDiagnosticsKind(path.join("pack", "assets", "minecraft", "textures", "stone.png.mcmeta"), "json"),
+      "textureMetadata"
+    );
+    assert.strictEqual(
+      getResourceSemanticDiagnosticsKind(path.join("pack", "assets", "example", "waypoint_style", "custom.json"), "json"),
+      "waypointStyle"
+    );
+  });
+
+  it("keeps invalid atlas files in diagnostics while limiting fixed vanilla entry points", () => {
+    assert.strictEqual(
+      getResourceSurfaceDocumentKind(path.join("pack", "assets", "minecraft", "atlases", "blocks.json")),
+      "atlases"
+    );
+    assert.strictEqual(
+      getResourceSurfaceDocumentKind(path.join("pack", "assets", "minecraft", "atlases", "made_up.json")),
+      "atlases"
+    );
+    assert.strictEqual(
+      getResourceSurfaceDocumentKind(path.join("pack", "assets", "example", "atlases", "blocks.json")),
+      "atlases"
+    );
+    assert.strictEqual(
+      getResourceSemanticDiagnosticsKind(
+        path.join("pack", "assets", "example", "atlases", "made_up.json"),
+        "json"
+      ),
+      "atlas"
+    );
+    assert.strictEqual(
+      getResourceSurfaceDocumentKind(path.join("pack", "assets", "minecraft", "shaders", "core", "terrain.vsh")),
+      "shaderCore"
+    );
+    assert.strictEqual(
+      getResourceSurfaceDocumentKind(path.join("pack", "assets", "example", "shaders", "core", "terrain.vsh")),
+      null
+    );
+
+    const schemaMatches = getResourceSchemaRegistrations().map(schema => schema.fileMatch);
+    for (const fixedEntry of [
+      "**/assets/minecraft/texts/credits.json",
+      "**/assets/minecraft/gpu_warnlist.json",
+      "**/assets/minecraft/regional_compliancies.json"
+    ]) {
+      assert.ok(schemaMatches.includes(fixedEntry), fixedEntry);
+    }
+    assert.strictEqual(schemaMatches.some(fileMatch => fileMatch.includes("assets/*/gpu_warnlist")), false);
+    assert.strictEqual(
+      getTextResourceFileKind(path.join("pack", "assets", "minecraft", "texts", "splashes.txt")),
+      "splashes"
+    );
+    assert.strictEqual(
+      getTextResourceFileKind(path.join("pack", "assets", "example", "texts", "splashes.txt")),
       null
     );
   });
@@ -146,6 +202,8 @@ describe("resource surface registry", () => {
     assert.ok(watcherPatterns.includes("**/assets/*/font/**/*"));
     assert.ok(watcherPatterns.includes("**/rsgl.config.json"));
     assert.ok(watcherPatterns.includes("**/assets/*/shaders/include/**/*.glsl"));
+    assert.ok(watcherPatterns.includes("**/assets/minecraft/shaders/core/**/*.vsh"));
+    assert.strictEqual(watcherPatterns.includes("**/assets/*/shaders/core/**/*.vsh"), false);
     assert.strictEqual(
       getResourceSurfaceDocumentKind(
         path.join("pack", "assets", "minecraft", "shaders", "include", "lighting", "fog.glsl")

@@ -1,4 +1,5 @@
 import type { Dirent } from "node:fs";
+import type { SoundEventFileGraph } from "../diagnostics/soundEventGraph";
 import type {
   OggMetadata,
   PackMetadata,
@@ -10,14 +11,12 @@ import type { JsonDocumentNode } from "../utils/jsonAst";
 import type { ResourceReference } from "../utils/resourceReferences/types";
 import type { ResourceReferenceCacheDescriptor } from "../utils/resourceReferences/host";
 import { FileSystemResourceCache, type OpenTextDocumentProvider } from "./fileSystemResourceCache";
-import type {
-  FileFreshnessPolicyOptions,
-  WatcherTrustProvider
-} from "./fileFreshnessPolicy";
+import type { FileFreshnessPolicyOptions, WatcherTrustProvider } from "./fileFreshnessPolicy";
 import { MediaMetadataCache } from "./mediaMetadataCache";
 import { ModelPreviewArtifactCache } from "./modelPreviewArtifactCache";
 import { ModelResourceCache } from "./modelResourceCache";
 import type {
+  CachedModelParentChain,
   CachedModelDocument,
   CachedTextureVariableDefinition
 } from "./modelParentChain";
@@ -185,8 +184,8 @@ export class WorkspaceResourceCache implements ResourceCacheGenerationState {
     return this.resourceResolution.getResourceLocation(resourcePath, targetFileExtension);
   }
 
-  getSoundEvents(soundsJsonPath: string): Set<string> | null {
-    return this.fileSystem.getSoundEvents(soundsJsonPath);
+  getSoundEventGraphAsync(soundsJsonPath: string): Promise<SoundEventFileGraph | null> {
+    return this.fileSystem.getSoundEventGraphAsync(soundsJsonPath);
   }
 
   getPngMetadata(fileName: string): PngMetadata | null {
@@ -217,6 +216,15 @@ export class WorkspaceResourceCache implements ResourceCacheGenerationState {
     source?: string
   ): Promise<CachedModelDocument[]> {
     return this.models.getModelParentChainAsync(document, ast, configuration, source);
+  }
+
+  getModelParentChainResultAsync(
+    document: CacheTextDocument,
+    ast: JsonDocumentNode,
+    configuration: ResourceConfiguration,
+    source?: string
+  ): Promise<CachedModelParentChain> {
+    return this.models.getModelParentChainResultAsync(document, ast, configuration, source);
   }
 
   getModelTextureVariableDefinitions(

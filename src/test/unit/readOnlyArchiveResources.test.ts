@@ -31,7 +31,7 @@ describe("read-only archive resources", () => {
     assert.strictEqual(configuration.externalLayers?.[0].source, "zip");
   });
 
-  it("indexes implicit directories and reads stored and deflated Unicode entries", () => {
+  it("indexes implicit directories and reads stored and deflated Unicode entries asynchronously", async () => {
     const modelText = JSON.stringify({ parent: "minecraft:block/cube_all" });
     const archive = ZipArchive.fromBytes(createZipFixture([
       { path: "pack.mcmeta", content: "{}", compression: "stored" },
@@ -49,11 +49,11 @@ describe("read-only archive resources", () => {
       mtime: 0
     });
     assert.strictEqual(
-      Buffer.from(archive.readFile("assets/demo/models/block/方 块.json")).toString("utf8"),
+      Buffer.from(await archive.readFile("assets/demo/models/block/方 块.json")).toString("utf8"),
       modelText
     );
     assert.deepStrictEqual(
-      [...archive.readFile("assets/demo/textures/block/stone.png")],
+      [...await archive.readFile("assets/demo/textures/block/stone.png")],
       [1, 2, 3]
     );
   });
@@ -65,7 +65,7 @@ describe("read-only archive resources", () => {
     );
   });
 
-  it("contains deterministic malformed-archive mutations behind typed errors", () => {
+  it("contains deterministic malformed-archive mutations behind typed errors", async () => {
     const entryPath = "assets/demo/models/block/mutated.json";
     const valid = Buffer.from(createZipFixture([{ path: entryPath, content: "{\"ok\":true}" }]));
     const mutations: Buffer[] = [
@@ -87,7 +87,7 @@ describe("read-only archive resources", () => {
         const archive = ZipArchive.fromBytes(bytes);
         archive.readDirectory("");
         try {
-          archive.readFile(entryPath);
+          await archive.readFile(entryPath);
         } catch (error) {
           assert.ok(
             error instanceof ZipArchiveError,
@@ -103,7 +103,7 @@ describe("read-only archive resources", () => {
     }
   });
 
-  it("enforces entry-count and decompressed-size limits", () => {
+  it("enforces entry-count and decompressed-size limits", async () => {
     const archiveBytes = createZipFixture([
       { path: "one.txt", content: "1234" },
       { path: "two.txt", content: "5678" }
@@ -113,8 +113,8 @@ describe("read-only archive resources", () => {
       (error: unknown) => error instanceof ZipArchiveError && error.code === "invalidArchive"
     );
     const archive = ZipArchive.fromBytes(archiveBytes, { maximumEntryBytes: 3 });
-    assert.throws(
-      () => archive.readFile("one.txt"),
+    await assert.rejects(
+      archive.readFile("one.txt"),
       (error: unknown) => error instanceof ZipArchiveError && error.code === "entryTooLarge"
     );
   });

@@ -100,12 +100,14 @@ describe("repository build graph", () => {
     }
     assert.deepStrictEqual(bundles.bundleEntryDefinitions.root.singletonExternals, ["vscode"]);
     assert.deepStrictEqual(bundles.bundleEntryDefinitions.rsglHost.singletonExternals, ["vscode"]);
-    assert.strictEqual(bundles.bundleEntryDefinitions.root.releasePostMinifier, "terser");
-    assert.strictEqual(bundles.bundleEntryDefinitions.rsglHost.releasePostMinifier, "terser");
+    for (const id of ["root", "rsglHost", "server", "worker"] as const) {
+      assert.strictEqual(bundles.bundleEntryDefinitions[id].releasePostMinifier, "terser");
+    }
     for (const id of ["server", "worker", "modelPreview", "cli"] as const) {
       assert.deepStrictEqual(bundles.bundleEntryDefinitions[id].singletonExternals, []);
-      assert.strictEqual(bundles.bundleEntryDefinitions[id].releasePostMinifier, undefined);
     }
+    assert.strictEqual(bundles.bundleEntryDefinitions.modelPreview.releasePostMinifier, undefined);
+    assert.strictEqual(bundles.bundleEntryDefinitions.cli.releasePostMinifier, undefined);
     assert.deepStrictEqual(
       pickBuildEnvironment(bundles.bundleEntryDefinitions.modelPreview),
       { platform: "browser", format: "esm", target: "es2022", external: [] }

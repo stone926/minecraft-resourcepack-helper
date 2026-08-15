@@ -20,7 +20,7 @@ describe("CIT resource ID service", () => {
     citResourceIdService.invalidateAll();
   });
 
-  it("refreshes item IDs after resource JSON files are created", () => {
+  it("refreshes item IDs after resource JSON files are created", async () => {
     const root = createTempDirectory();
 
     try {
@@ -29,21 +29,21 @@ describe("CIT resource ID service", () => {
       const itemFileName = path.join(pack, "assets", "custom", "items", "wand.json");
       writeFile(pack, "assets/minecraft/citresewn/cit/wand.properties", "type=item\n");
 
-      const before = citResourceIdService.getResourceIds(citFileName);
+      const before = await citResourceIdService.getResourceIds(citFileName);
       assert.strictEqual(before.items.includes("custom:wand"), false);
 
       writeJson(pack, "assets/custom/items/wand.json", {});
       workspaceResourceCache.invalidatePath(itemFileName);
       citResourceIdService.invalidatePath(itemFileName, "create");
 
-      const after = citResourceIdService.getResourceIds(citFileName);
+      const after = await citResourceIdService.getResourceIds(citFileName);
       assert.strictEqual(after.items.includes("custom:wand"), true);
     } finally {
       removeTempDirectory(root);
     }
   });
 
-  it("keeps filename inventories warm across content and unrelated resource changes", () => {
+  it("keeps filename inventories warm across content and unrelated resource changes", async () => {
     const root = createTempDirectory();
 
     try {
@@ -53,20 +53,20 @@ describe("CIT resource ID service", () => {
       writeFile(pack, "assets/minecraft/citresewn/cit/wand.properties", "type=item\n");
       writeJson(pack, "assets/custom/items/wand.json", {});
 
-      const initial = citResourceIdService.getResourceIds(citFileName);
+      const initial = await citResourceIdService.getResourceIds(citFileName);
       citResourceIdService.invalidatePath(itemFileName, "change");
       citResourceIdService.invalidatePath(
         path.join(pack, "assets", "custom", "textures", "item", "wand.png"),
         "create"
       );
 
-      assert.strictEqual(citResourceIdService.getResourceIds(citFileName), initial);
+      assert.strictEqual(await citResourceIdService.getResourceIds(citFileName), initial);
 
       const secondItem = path.join(pack, "assets", "custom", "items", "staff.json");
       writeJson(pack, "assets/custom/items/staff.json", {});
       workspaceResourceCache.invalidatePath(secondItem);
       citResourceIdService.invalidatePath(secondItem, "create");
-      const refreshed = citResourceIdService.getResourceIds(citFileName);
+      const refreshed = await citResourceIdService.getResourceIds(citFileName);
       assert.notStrictEqual(refreshed, initial);
       assert.ok(refreshed.items.includes("custom:staff"));
     } finally {
@@ -74,7 +74,7 @@ describe("CIT resource ID service", () => {
     }
   });
 
-  it("refreshes custom enchantment IDs on data inventory create and delete events", () => {
+  it("refreshes custom enchantment IDs on data inventory create and delete events", async () => {
     const root = createTempDirectory();
 
     try {
@@ -97,7 +97,7 @@ describe("CIT resource ID service", () => {
       writeFile(pack, "assets/minecraft/citresewn/cit/wand.properties", "type=elytra\n");
 
       assert.strictEqual(
-        citResourceIdService.getResourceIds(citFileName).enchantments.includes("arcana:stormcall"),
+        (await citResourceIdService.getResourceIds(citFileName)).enchantments.includes("arcana:stormcall"),
         false
       );
 
@@ -105,7 +105,7 @@ describe("CIT resource ID service", () => {
       workspaceResourceCache.invalidatePath(enchantmentFileName);
       citResourceIdService.invalidatePath(enchantmentFileName, "create");
       assert.strictEqual(
-        citResourceIdService.getResourceIds(citFileName).enchantments.includes("arcana:stormcall"),
+        (await citResourceIdService.getResourceIds(citFileName)).enchantments.includes("arcana:stormcall"),
         true
       );
 
@@ -113,7 +113,7 @@ describe("CIT resource ID service", () => {
       workspaceResourceCache.invalidatePath(enchantmentFileName);
       citResourceIdService.invalidatePath(enchantmentFileName, "delete");
       assert.strictEqual(
-        citResourceIdService.getResourceIds(citFileName).enchantments.includes("arcana:stormcall"),
+        (await citResourceIdService.getResourceIds(citFileName)).enchantments.includes("arcana:stormcall"),
         false
       );
     } finally {
@@ -128,7 +128,7 @@ describe("CIT resource ID service", () => {
     );
   });
 
-  it("eventually revalidates inventories when recursive watcher coverage is unavailable", () => {
+  it("eventually revalidates inventories when recursive watcher coverage is unavailable", async () => {
     const root = createTempDirectory();
     let now = 0;
 
@@ -148,13 +148,13 @@ describe("CIT resource ID service", () => {
         inventoryFreshnessTtlMs: 100
       });
 
-      assert.strictEqual(service.getResourceIds(citFileName).items.includes("custom:late"), false);
+      assert.strictEqual((await service.getResourceIds(citFileName)).items.includes("custom:late"), false);
       writeJson(pack, "assets/custom/items/late.json", {});
       workspaceResourceCache.invalidatePath(itemFileName);
       now = 99;
-      assert.strictEqual(service.getResourceIds(citFileName).items.includes("custom:late"), false);
+      assert.strictEqual((await service.getResourceIds(citFileName)).items.includes("custom:late"), false);
       now = 100;
-      assert.strictEqual(service.getResourceIds(citFileName).items.includes("custom:late"), true);
+      assert.strictEqual((await service.getResourceIds(citFileName)).items.includes("custom:late"), true);
     } finally {
       removeTempDirectory(root);
     }
@@ -180,7 +180,7 @@ describe("CIT resource ID service", () => {
         inventoryFreshnessTtlMs: 100
       });
 
-      assert.deepStrictEqual(service.getResourceIds(citFileName).items, ["custom:existing"]);
+      assert.deepStrictEqual((await service.getResourceIds(citFileName)).items, ["custom:existing"]);
       writeJson(pack, "assets/custom/items/late.json", {});
       // Simulate the filesystem cache independently observing the change while
       // the inventory watcher misses it; only the inventory TTL should expire.
@@ -202,7 +202,7 @@ describe("CIT resource ID service", () => {
     }
   });
 
-  it("warms resource IDs asynchronously without blocking the caller", async () => {
+  it("warms resource IDs with asynchronous filesystem traversal without blocking the caller", async () => {
     const root = createTempDirectory();
 
     try {
@@ -225,6 +225,13 @@ describe("CIT resource ID service", () => {
       assert.deepStrictEqual(readyCallbacks, []);
       assert.strictEqual(citResourceIdService.getCachedResourceIds(citFileName), null);
 
+      const serviceSource = fs.readFileSync(
+        path.join(process.cwd(), "src", "cit", "citResourceIdService.ts"),
+        "utf8"
+      );
+      assert.ok(serviceSource.includes("await fs.readdir"));
+      assert.strictEqual(serviceSource.includes("resolve(this.getResourceIds"), false);
+
       await warmedPromise;
       assert.deepStrictEqual(readyCallbacks, ["ready"]);
       assert.strictEqual(citResourceIdService.getCachedResourceIds(citFileName)?.items.includes("custom:wand"), true);
@@ -233,7 +240,7 @@ describe("CIT resource ID service", () => {
     }
   });
 
-  it("shares one resource inventory across many CIT documents in the same pack", () => {
+  it("shares one resource inventory across many CIT documents in the same pack", async () => {
     const root = createTempDirectory();
 
     try {
@@ -243,7 +250,7 @@ describe("CIT resource ID service", () => {
       for (let index = 0; index < 65; index++) {
         const relativePath = `assets/minecraft/citresewn/cit/item-${index}.properties`;
         writeFile(pack, relativePath, "type=item\n");
-        inventories.add(citResourceIdService.getResourceIds(path.join(pack, relativePath)));
+        inventories.add(await citResourceIdService.getResourceIds(path.join(pack, relativePath)));
       }
 
       assert.strictEqual(inventories.size, 1);

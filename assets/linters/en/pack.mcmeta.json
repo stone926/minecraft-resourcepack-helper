@@ -64,21 +64,6 @@
               "$ref": "#/definitions/formatRangeObject"
             }
           ]
-        },
-        "features": {
-          "type": "object",
-          "title": "Experimental features",
-          "description": "Declares the experimental feature flags enabled by this pack.",
-          "additionalProperties": true,
-          "properties": {
-            "enabled": {
-              "type": "array",
-              "title": "Enabled features",
-              "items": {
-                "type": "string"
-              }
-            }
-          }
         }
       },
       "anyOf": [

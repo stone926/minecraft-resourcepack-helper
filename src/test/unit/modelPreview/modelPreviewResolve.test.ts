@@ -3,7 +3,10 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { PreviewIssue } from "../../../modelPreview/ir/PreviewDocument";
 import type { ModelPreviewFileSystem } from "../../../modelPreview/model/ModelDocument";
+import { ModelIssueCollector } from "../../../modelPreview/model/ModelIssues";
 import { fileUriString } from "../../../modelPreview/paths";
+import { ParentChainResolver } from "../../../modelPreview/resolve/ParentChainResolver";
+import { nodeModelPreviewFileSystem } from "../../../modelPreview/service/NodeModelPreviewFileSystem";
 import { createPack, createTempDirectory, removeTempDirectory, writeFile, writeJson } from "../helpers/tempPack";
 import { createService } from "./previewServiceTestSupport";
 
@@ -91,6 +94,54 @@ describe("model preview parent and texture resolution", () => {
       assert.strictEqual(preview.materials[0].transparent, true);
       assert.ok(preview.dependencies.some(dependency => dependency.kind === "textureMetadata"));
       assert.ok(preview.issues.some(issue => issue.severity === "info" && issueMessageKey(issue).includes("Animated texture metadata")));
+    } finally {
+      removeTempDirectory(root);
+    }
+  });
+
+  it("replaces an inherited display mode as a whole and restores omitted defaults", async () => {
+    const root = createTempDirectory();
+
+    try {
+      const pack = createPack(root, "pack");
+      const childFileName = path.join(pack, "assets/minecraft/models/item/child.json");
+      writeJson(pack, "assets/minecraft/models/item/parent.json", {
+        display: {
+          gui: {
+            rotation: [10, 20, 30],
+            translation: [1, 2, 3],
+            scale: [2, 2, 2]
+          },
+          ground: {
+            translation: [4, 5, 6]
+          }
+        }
+      });
+      writeJson(pack, "assets/minecraft/models/item/child.json", {
+        parent: "minecraft:item/parent",
+        display: {
+          gui: {
+            scale: [-1, 0.5, 3]
+          }
+        }
+      });
+
+      const resolved = await new ParentChainResolver(
+        nodeModelPreviewFileSystem,
+        {},
+        new ModelIssueCollector()
+      ).resolve(childFileName);
+
+      assert.deepStrictEqual(resolved?.display.gui, {
+        rotation: [0, 0, 0],
+        translation: [0, 0, 0],
+        scale: [-1, 0.5, 3]
+      });
+      assert.deepStrictEqual(resolved?.display.ground, {
+        rotation: [0, 0, 0],
+        translation: [4, 5, 6],
+        scale: [1, 1, 1]
+      });
     } finally {
       removeTempDirectory(root);
     }

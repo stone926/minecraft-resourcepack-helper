@@ -82,7 +82,8 @@
         },
         "output": {
           "type": "string",
-          "title": "Output target"
+          "title": "Output target",
+          "description": "Output target for this pass. Must be minecraft:main or a custom target defined in the targets section; the other builtin targets are read-only inputs."
         },
         "uniforms": {
           "type": "object",
@@ -107,7 +108,7 @@
         "target": {
           "type": "string",
           "title": "Input target",
-          "description": "Name of a render target defined in the targets section, or a builtin target (minecraft:main, minecraft:depth, minecraft:translucent, minecraft:translucent_depth, minecraft:emissive, minecraft:emissive_depth, minecraft:outline, minecraft:particles, minecraft:particles_depth, minecraft:weather, minecraft:clouds)."
+          "description": "Name of a render target defined in the targets section, or one of the seven read-only builtin inputs (minecraft:main, minecraft:translucent, minecraft:item_entity, minecraft:particles, minecraft:weather, minecraft:clouds, minecraft:entity_outline)."
         },
         "use_depth_buffer": {
           "type": "boolean",

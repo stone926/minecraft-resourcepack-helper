@@ -89,6 +89,18 @@ describe("model preview manifest", () => {
     assert.ok(listenerIndex < htmlIndex, "ready can be lost if HTML is injected before the message listener is registered");
   });
 
+  it("bounds pre-ready screenshot waits and owns background refresh failures", () => {
+    const source = fs.readFileSync(
+      path.join(process.cwd(), "src", "modelPreview", "host", "ModelPreviewPanel.ts"),
+      "utf8"
+    );
+
+    assert.ok(source.includes("modelPreviewReadyTimeoutMs"));
+    assert.ok(source.includes("this.settleReadyWait(new Error"));
+    assert.ok(source.includes("void this.refresh(changedFileNameOrUri).catch"));
+    assert.ok(source.includes("this.requestRefresh(changedFileNameOrUri)"));
+  });
+
   it("keeps preview camera padded and the details panel adjustable", () => {
     const webviewHtml = fs.readFileSync(path.join(process.cwd(), "src", "modelPreview", "host", "ModelPreviewWebview.ts"), "utf8");
     const script = readCombinedModelPreviewScript();

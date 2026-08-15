@@ -59,13 +59,19 @@
         },
         "width": {
           "type": "integer",
-          "minimum": 1,
-          "description": "Frame width ratio."
+          "description": "Frame width in pixels. A value of -1 is treated the same as omitting this dimension.",
+          "oneOf": [
+            { "const": -1 },
+            { "minimum": 1 }
+          ]
         },
         "height": {
           "type": "integer",
-          "minimum": 1,
-          "description": "Frame height ratio."
+          "description": "Frame height in pixels. A value of -1 is treated the same as omitting this dimension.",
+          "oneOf": [
+            { "const": -1 },
+            { "minimum": 1 }
+          ]
         }
       }
     },

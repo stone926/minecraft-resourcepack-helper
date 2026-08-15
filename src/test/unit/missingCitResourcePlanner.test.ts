@@ -43,6 +43,19 @@ describe("missing CIT resource planner", () => {
     );
     assert.strictEqual(json.parent, "minecraft:item/generated");
   });
+
+  it("refuses absolute and traversal-based creation targets outside the pack", () => {
+    const outside = path.resolve(packRoot, "..", "outside", "escaped");
+
+    assert.strictEqual(
+      planner.plan(documentFileName, reference("../../../../../../escaped", "textures", "png")),
+      null
+    );
+    assert.strictEqual(
+      planner.plan(documentFileName, reference(outside, "models", "json")),
+      null
+    );
+  });
 });
 
 function reference(value: string, target: string, extension: string): ResourceReference {

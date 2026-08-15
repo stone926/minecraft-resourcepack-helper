@@ -60,14 +60,16 @@ export const bundleEntryDefinitions = Object.freeze({
     outfile: bundleEntryOutfiles.server,
     platform: "node",
     format: "cjs",
-    target: "node22"
+    target: "node22",
+    releasePostMinifier: "terser"
   }),
   worker: entry({
     entryPoint: "src/rsgl/host/commands/buildWorker.ts",
     outfile: bundleEntryOutfiles.worker,
     platform: "node",
     format: "cjs",
-    target: "node22"
+    target: "node22",
+    releasePostMinifier: "terser"
   }),
   modelPreview: entry({
     entryPoint: "webviews/modelPreview/main.js",
@@ -204,9 +206,9 @@ export async function buildBundleTarget({ targetName = "all", bundleMode = "deve
 }
 
 /**
- * esbuild remains the fast primary bundler. The two installed activation entries
- * receive a deterministic release-only Terser pass because their frozen VSIX
- * budgets measure deflated bytes and benefit materially from top-level folding.
+ * esbuild remains the fast primary bundler. Installed Node entries receive a
+ * deterministic release-only Terser pass because their frozen VSIX budgets
+ * measure deflated bytes and benefit materially from top-level folding.
  * Production source maps are kept accurate, but are intentionally not linked
  * from runtime code because the production VSIX excludes them.
  */
@@ -218,7 +220,7 @@ async function postMinifyReleaseBundle(outfile) {
     { [outputName]: readFileSync(outfile, "utf8") },
     {
       ecma: 2022,
-      compress: { passes: 3, toplevel: true },
+      compress: { passes: 5, toplevel: true },
       mangle: { toplevel: true },
       format: { comments: false },
       sourceMap: { content: sourceMap, filename: outputName }

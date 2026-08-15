@@ -51,6 +51,28 @@ export const resourcePackNamespaceDirectories: readonly string[] = [
   ]).map(directory => path.join(...directory.split("/")))
 ];
 
+const windowsReservedFileName = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i;
+
+/** A pack name is one portable directory segment, never a path supplied by the user. */
+export function isValidPackDirectoryName(value: string): boolean {
+  const name = value.trim();
+  return name.length > 0
+    && name !== "."
+    && name !== ".."
+    && !path.isAbsolute(name)
+    && !/[<>:"/\\|?*]/.test(name)
+    && ![...name].some(character => character.charCodeAt(0) < 32)
+    && !/[. ]$/.test(name)
+    && !windowsReservedFileName.test(name);
+}
+
+/** Minecraft namespaces are also filesystem directory names, so dot segments are excluded. */
+export function isValidResourcePackNamespace(value: string): boolean {
+  const namespace = value.trim();
+  return /^[a-z0-9_.-]+$/.test(namespace)
+    && isValidPackDirectoryName(namespace);
+}
+
 export function writePackScaffold(packPath: string, namespace: string, packFormat: string, description: string) {
   fs.mkdirSync(packPath);
   writePackRootFiles(packPath, packFormat, description);
@@ -64,7 +86,11 @@ export function writePackRootFiles(packPath: string, packFormat: string, descrip
 }
 
 export function createNamespaceFolders(packPath: string, namespace: string) {
-  const namespacePath = path.join(packPath, "assets", namespace);
+  const normalizedNamespace = namespace.trim();
+  if (!isValidResourcePackNamespace(normalizedNamespace)) {
+    throw new RangeError(`Invalid resource pack namespace: ${namespace}`);
+  }
+  const namespacePath = path.join(packPath, "assets", normalizedNamespace);
   for (const resourcePath of resourcePackNamespaceDirectories) {
     fs.mkdirSync(path.join(namespacePath, resourcePath), { recursive: true });
   }

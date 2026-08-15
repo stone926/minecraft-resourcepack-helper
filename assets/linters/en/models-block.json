@@ -17,7 +17,7 @@
     "ambientocclusion": {
       "type": "boolean",
       "title": "Ambient occlusion",
-      "description": "Whether to use ambient occlusion. Defaults to true. If a parent is set, the parent model's ambientocclusion overrides this model's ambientocclusion."
+      "description": "Whether to use ambient occlusion. Defaults to true and, when present, overrides the value inherited from the parent model."
     },
     "display": {
       "title": "Display",
@@ -215,17 +215,17 @@
       "items": [
       {
         "type": "number",
-        "minimum": 0,
+        "minimum": -4,
         "maximum": 4
       },
       {
         "type": "number",
-        "minimum": 0,
+        "minimum": -4,
         "maximum": 4
       },
       {
         "type": "number",
-        "minimum": 0,
+        "minimum": -4,
         "maximum": 4
       }]
     },

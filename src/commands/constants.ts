@@ -5,6 +5,8 @@ export const defaultPackPng: string = "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8
 export const errorMsg = {
   emptyInput: lm("input must not be empty"),
   folderAlreadyExist: lm("folder already exist"),
+  invalidPackName: lm("pack name must be a single valid folder name"),
+  invalidNamespace: lm("namespace must use lowercase letters, digits, underscores, hyphens, or dots"),
   invalidPackFormat: lm("input must be a pack format version such as 88.0 or 69")
 };
 export const promptMsg = {

@@ -177,14 +177,31 @@ export class ResourceUniverseIndex {
     );
   }
 
-  public getIncoming(target: ResourceGraphLogicalKey): ResourceEdge[] {
+  public getIncoming(
+    target: ResourceGraphLogicalKey,
+    context?: ResourceResolutionContext
+  ): ResourceEdge[] {
     const key = logicalKeyIdentity(target);
-    return this.queryCache.getIncoming(key, () =>
+    const edges = this.queryCache.getIncoming(key, () =>
       [...(this.incomingByTarget.get(key) ?? [])]
         .map(edgeId => this.edges.get(edgeId))
         .filter((edge): edge is ResourceEdge => edge !== undefined)
         .sort(compareEdges)
     );
+    if (!context) {
+      return edges;
+    }
+
+    const plan = this.resolutionPlanFor(context);
+    return edges.filter(edge => {
+      const producer = this.producers.get(edge.sourceProducerId);
+      return producer !== undefined
+        && producer.projectId === context.projectId
+        && plan.applicableProviderIds.has(producer.providerId)
+        && producerMatchesScope(producer, plan.scope)
+        && plan.layerPriorities.has(producer.layerId)
+        && !producerIsBlockedByEffectiveStack(producer, plan.layerPriorities);
+    });
   }
 
   public resolve(
@@ -312,7 +329,8 @@ export class ResourceUniverseIndex {
       if (!producer
         || producer.projectId !== context.projectId
         || !plan.applicableProviderIds.has(producer.providerId)
-        || !producerMatchesScope(producer, plan.scope)) {
+        || !producerMatchesScope(producer, plan.scope)
+        || producerIsBlockedByEffectiveStack(producer, plan.layerPriorities)) {
         continue;
       }
       const layerPriority = plan.layerPriorities.get(producer.layerId);
@@ -590,6 +608,20 @@ function producerMatchesScope(producer: ResourceProducer, scope: ResourceResolut
     return producer.layerRole === "vanilla";
   }
   return true;
+}
+
+function producerIsBlockedByEffectiveStack(
+  producer: ResourceProducer,
+  layerPriorities: ReadonlyMap<string, number>
+): boolean {
+  const producerPriority = layerPriorities.get(producer.layerId);
+  if (producerPriority === undefined) {
+    return false;
+  }
+  return producer.blockedByLayerIds?.some(layerId => {
+    const blockerPriority = layerPriorities.get(layerId);
+    return blockerPriority !== undefined && blockerPriority < producerPriority;
+  }) ?? false;
 }
 
 

@@ -215,9 +215,9 @@ describe("workspace resource cache", () => {
     }
   });
 
-  it("uses open document content for sounds.json event indexes", () => {
+  it("caches parsed sound-event graphs for targeted asynchronous loading", async () => {
     const root = createTempDirectory();
-    const soundsPath = path.join(root, "assets", "custom", "sounds.json");
+    const soundsPath = path.join(root, "assets", "alpha", "sounds.json");
 
     try {
       fs.mkdirSync(path.dirname(soundsPath), { recursive: true });
@@ -229,14 +229,21 @@ describe("workspace resource cache", () => {
           fileName: soundsPath,
           languageId: "json",
           version: 3,
-          getText: () => JSON.stringify({ current: {} })
+          getText: () => JSON.stringify({
+            start: { sounds: [{ name: "beta:finish", type: "event" }] }
+          })
         }
         : null);
+      const first = await cache.getSoundEventGraphAsync(soundsPath);
+      const second = await cache.getSoundEventGraphAsync(soundsPath);
 
-      const events = cache.getSoundEvents(soundsPath);
-
-      assert.ok(events?.has("current"));
-      assert.strictEqual(events?.has("old"), false);
+      assert.ok(first);
+      assert.strictEqual(second, first);
+      assert.deepStrictEqual(
+        first.edges.map(edge => [edge.sourceId, edge.targetId]),
+        [["alpha:start", "beta:finish"]]
+      );
+      assert.strictEqual(cache.getStats().hits.soundEvents, 1);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }

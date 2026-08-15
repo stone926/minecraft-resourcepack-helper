@@ -65,6 +65,14 @@ function expectToken(
 }
 
 describe("RSGL semantic tokens", () => {
+  it("keeps semantic analysis bounded after excessive expression nesting", () => {
+    const depth = 2_048;
+    const module = parseRsgl(`let nested = ${"[".repeat(depth)}0${"]".repeat(depth)}`);
+
+    assert.ok(module.diagnostics.some(diagnostic => diagnostic.code === "rsgl.expressionNestingTooDeep"));
+    assert.doesNotThrow(() => getRsglSemanticTokens(bindRsglModule(module)));
+  });
+
   it("memoizes tokens for an unchanged bound semantic model", () => {
     const model = bindRsglModule(parseRsgl("let value = 1"));
     const first = getRsglSemanticTokens(model);

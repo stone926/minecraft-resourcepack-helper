@@ -1,4 +1,4 @@
-import { inflateRawSync } from "node:zlib";
+import { inflateRaw } from "node:zlib";
 
 const endOfCentralDirectorySignature = 0x06054b50;
 const zip64EndOfCentralDirectorySignature = 0x06064b50;
@@ -137,7 +137,7 @@ export class ZipArchive {
       .sort((left, right) => left.name.localeCompare(right.name, "en"));
   }
 
-  public readFile(pathValue: string): Uint8Array {
+  public async readFile(pathValue: string): Promise<Uint8Array> {
     const path = normalizeLookupPath(pathValue);
     const record = this.records.get(path);
     if (!record) {
@@ -159,10 +159,10 @@ export class ZipArchive {
     const compressed = this.compressedEntryBytes(record);
     let result: Buffer;
     if (record.compressionMethod === 0) {
-      result = Buffer.from(compressed);
+      result = await copyBufferCooperatively(compressed);
     } else if (record.compressionMethod === 8) {
       try {
-        result = inflateRawSync(compressed, { maxOutputLength: this.maximumEntryBytes });
+        result = await inflateRawEntry(compressed, this.maximumEntryBytes);
       } catch (error) {
         throw new ZipArchiveError(
           "invalidArchive",
@@ -182,10 +182,10 @@ export class ZipArchive {
         `ZIP entry '${pathValue}' has an invalid uncompressed size.`
       );
     }
-    if (crc32(result) !== record.crc32) {
+    if (await crc32(result) !== record.crc32) {
       throw new ZipArchiveError("invalidArchive", `ZIP entry '${pathValue}' failed its CRC-32 check.`);
     }
-    return new Uint8Array(result);
+    return result;
   }
 
   private indexCentralDirectory(maximumEntries: number): void {
@@ -537,13 +537,49 @@ function assertAvailable(bytes: Buffer, offset: number, length: number, label: s
 
 let crc32Table: Uint32Array | undefined;
 
-function crc32(bytes: Uint8Array): number {
+async function crc32(bytes: Uint8Array): Promise<number> {
   const table = crc32Table ??= createCrc32Table();
   let value = 0xffffffff;
-  for (const byte of bytes) {
-    value = table[(value ^ byte) & 0xff] ^ (value >>> 8);
+  const chunkBytes = 256 * 1024;
+  for (let offset = 0; offset < bytes.byteLength; offset += chunkBytes) {
+    const end = Math.min(bytes.byteLength, offset + chunkBytes);
+    for (let index = offset; index < end; index++) {
+      value = table[(value ^ bytes[index]) & 0xff] ^ (value >>> 8);
+    }
+    if (end < bytes.byteLength) {
+      await yieldToEventLoop();
+    }
   }
   return (value ^ 0xffffffff) >>> 0;
+}
+
+function inflateRawEntry(bytes: Uint8Array, maximumEntryBytes: number): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    inflateRaw(bytes, { maxOutputLength: maximumEntryBytes }, (error, result) => {
+      if (error) {
+        reject(error);
+      } else {
+        resolve(result);
+      }
+    });
+  });
+}
+
+async function copyBufferCooperatively(bytes: Uint8Array): Promise<Buffer> {
+  const result = Buffer.allocUnsafe(bytes.byteLength);
+  const chunkBytes = 1024 * 1024;
+  for (let offset = 0; offset < bytes.byteLength; offset += chunkBytes) {
+    const end = Math.min(bytes.byteLength, offset + chunkBytes);
+    result.set(bytes.subarray(offset, end), offset);
+    if (end < bytes.byteLength) {
+      await yieldToEventLoop();
+    }
+  }
+  return result;
+}
+
+function yieldToEventLoop(): Promise<void> {
+  return new Promise(resolve => setImmediate(resolve));
 }
 
 function createCrc32Table(): Uint32Array {

@@ -22,6 +22,12 @@ function zeroWidthEdit(newText: string) {
 }
 
 describe("RSGL completion service", () => {
+  it("keeps completion responsive for expressions beyond the parser nesting limit", () => {
+    const text = `let nested = ${"[".repeat(2_048)}value`;
+
+    assert.doesNotThrow(() => getRsglCompletionItems(text, text.length));
+  });
+
   it("merges syntax candidates with workspace semantic symbols", () => {
     const items = getRsglCompletionItems("", 0, [
       symbol("makeCube", "template", "Function"),

@@ -2,7 +2,9 @@ import {
   canonicalizeResourceGraphIdentity,
   minecraftResourceKindDescriptors,
   minecraftResourceOutputPath,
+  resourceMatchesFilters,
   tryParseMinecraftResourceId,
+  type ResourceFilter,
   type ResourceGraphLogicalKey
 } from "../../../packages/mc-assets/src";
 import {
@@ -19,6 +21,8 @@ export type PhysicalAssetDefinitionLayerRoots =
       status: "ready";
       /** Effective root order inside this layer, for example overlays before its base assets root. */
       assetsRootUris: readonly SerializedResourceUri[];
+      /** This pack's filters, applied only to lower-priority layers. */
+      filters: readonly ResourceFilter[];
     }
   | { status: "unsupported" | "unavailable" };
 
@@ -132,9 +136,18 @@ export async function resolveExactPhysicalAssetDefinition(
     `${resourceId.path}.${descriptor.extension}`
   ];
   const probedUris = new Set<SerializedResourceUri>();
+  const higherPriorityFilters: Array<readonly ResourceFilter[]> = [];
+  const resourcePath = outputPath.split("/").slice(2).join("/");
 
   for (const layer of layersForScope(request.context, request.scope)) {
     throwIfAborted(signal, "Physical asset Definition resolution was cancelled.");
+    if (higherPriorityFilters.some(filters => resourceMatchesFilters(
+      filters,
+      resourceId.namespace,
+      resourcePath
+    ))) {
+      return { status: "missing", target, outputPath };
+    }
     const roots = await host.getOrderedAssetsRootUris(request.context, layer, signal);
     throwIfAborted(signal, "Physical asset Definition resolution was cancelled.");
     if (roots.status !== "ready") {
@@ -191,6 +204,7 @@ export async function resolveExactPhysicalAssetDefinition(
         }
       };
     }
+    higherPriorityFilters.push(roots.filters);
   }
 
   return { status: "missing", target, outputPath };

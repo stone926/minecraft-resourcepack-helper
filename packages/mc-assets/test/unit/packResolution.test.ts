@@ -270,6 +270,52 @@ describe("resource location utilities", () => {
     });
   });
 
+  it("uses target formats and explicit overlay selections for root candidates", () => {
+    const root = createTempDirectory();
+    const packRoot = path.join(root, "pack");
+
+    try {
+      fs.mkdirSync(path.join(packRoot, "assets", "minecraft", "models"), { recursive: true });
+      fs.writeFileSync(path.join(packRoot, "pack.mcmeta"), JSON.stringify({
+        overlays: {
+          entries: [
+            { directory: "legacy", formats: [60, 64] },
+            { directory: "current", min_format: [88, 0], max_format: [88, 0] }
+          ]
+        }
+      }));
+      const fileName = path.join(packRoot, "assets", "minecraft", "models", "machine.json");
+
+      assert.deepStrictEqual(getDocumentResourceRootCandidates(
+        fileName,
+        "models",
+        null,
+        "minecraft",
+        "textures",
+        { targetPackFormat: { major: 64, minor: 0 } }
+      ), [
+        path.join(packRoot, "legacy", "assets", "minecraft", "textures"),
+        path.join(packRoot, "assets", "minecraft", "textures")
+      ]);
+      assert.deepStrictEqual(getDocumentResourceRootCandidates(
+        fileName,
+        "models",
+        null,
+        "minecraft",
+        "textures",
+        {
+          targetPackFormat: { major: 64, minor: 0 },
+          overlaySelection: ["current"]
+        }
+      ), [
+        path.join(packRoot, "current", "assets", "minecraft", "textures"),
+        path.join(packRoot, "assets", "minecraft", "textures")
+      ]);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("resolves configured packs independently with overlays, filters, and exclusions", () => {
     const root = createTempDirectory();
     const excludedPack = path.join(root, "source pack");

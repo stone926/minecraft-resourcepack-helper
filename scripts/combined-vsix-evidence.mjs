@@ -178,7 +178,7 @@ function readAndVerifyStage(stageRoot, manifestFile) {
         lines: Object.freeze(readVscodeIgnoreLines(bytes))
       });
     }
-    if (file.path.endsWith(".json") && file.path !== "package.json") {
+    if (file.path.endsWith(".json")) {
       const value = parseJson(bytes, `stage JSON ${file.path}`);
       const compactBytes = Buffer.from(JSON.stringify(value));
       jsonAssets.push(Object.freeze({

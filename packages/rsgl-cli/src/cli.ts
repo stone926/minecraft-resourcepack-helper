@@ -74,6 +74,8 @@ const processIo: RsglCliIo = {
   writeErr: text => process.stderr.write(text)
 };
 
+class RsglCliUsageError extends Error {}
+
 const defaultWatchRuntime: RsglCliWatchRuntime = {
   build: (root, options) => buildRsglResourcePackDirectory(root, options),
   watchDirectory: (directory, recursive, listener) => {
@@ -107,6 +109,11 @@ export function runRsglCli(argv: string[], io: RsglCliIo = processIo): number {
   try {
     return runRsglCliCommand(argv, io);
   } catch (error) {
+    if (error instanceof RsglCliUsageError) {
+      writeCliError(io, error);
+      printHelp(io);
+      return 2;
+    }
     writeCliError(io, error);
     return 1;
   }
@@ -574,18 +581,30 @@ function resolveCliConfigSearchRoot(args: RsglCliArgs): string {
 export function parseRsglCliArgs(argv: string[]): RsglCliArgs {
   const [command = "help", ...rest] = argv;
   const result: RsglCliArgs = { command };
+  let optionsEnded = false;
   for (let index = 0; index < rest.length; index++) {
     const arg = rest[index];
-    if (arg === "--out" || arg === "--outDir") {
-      result.outDir = rest[++index];
-    } else if (arg === "--watch") {
+    if (!optionsEnded && arg === "--") {
+      optionsEnded = true;
+    } else if (!optionsEnded && (arg === "--out" || arg === "--outDir")) {
+      const value = rest[index + 1];
+      if (value === undefined || value.startsWith("-")) {
+        throw new RsglCliUsageError(`${arg} requires an output directory value.`);
+      }
+      result.outDir = value;
+      index++;
+    } else if (!optionsEnded && arg === "--watch") {
       result.watch = true;
-    } else if (arg === "--preview") {
+    } else if (!optionsEnded && arg === "--preview") {
       result.preview = true;
-    } else if (arg === "--adopt-identical") {
+    } else if (!optionsEnded && arg === "--adopt-identical") {
       result.adoptIdentical = true;
+    } else if (!optionsEnded && arg.startsWith("-")) {
+      throw new RsglCliUsageError(`Unknown option: ${arg}`);
     } else if (!result.root) {
       result.root = arg;
+    } else {
+      throw new RsglCliUsageError(`Unexpected positional argument: ${arg}`);
     }
   }
   return result;

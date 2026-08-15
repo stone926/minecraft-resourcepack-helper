@@ -171,8 +171,17 @@ class RsglLexer {
   private readNumberToken(start: number, leadingTrivia: Trivia[]): RsglToken {
     if (this.startsWith("0x") || this.startsWith("0X")) {
       this.offset += 2;
+      const digitStart = this.offset;
       while (!this.isAtEnd() && /[0-9a-fA-F]/.test(this.peek())) {
         this.offset++;
+      }
+      if (this.offset === digitStart) {
+        this.diagnostics.push(this.createDiagnostic(
+          "rsgl.invalidHexNumber",
+          "A hexadecimal literal must contain at least one hexadecimal digit after '0x'.",
+          start,
+          this.offset
+        ));
       }
       return this.createToken("number", start, leadingTrivia);
     }

@@ -272,11 +272,14 @@ export class TypeParser extends ParserContext {
 
   protected parseNumberLiteral(): NumberLiteralNode {
     const token = this.advance();
+    const parsedValue = token.text.startsWith("0x") || token.text.startsWith("0X")
+      ? Number.parseInt(token.text.slice(2), 16)
+      : Number(token.text);
     return {
       kind: "NumberLiteral",
-      value: token.text.startsWith("0x") || token.text.startsWith("0X")
-        ? Number.parseInt(token.text.slice(2), 16)
-        : Number(token.text),
+      // The lexer owns malformed-number diagnostics. Keep the recovery AST
+      // finite so later semantic and compile passes never receive NaN.
+      value: Number.isFinite(parsedValue) ? parsedValue : 0,
       raw: token.text,
       ...this.nodeRanges(token, token)
     };

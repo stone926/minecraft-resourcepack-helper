@@ -542,7 +542,13 @@ function evaluateJoin(
     host.markFailure();
     return handledFailure();
   }
-  if (!source.every(value => typeof value === "string")) {
+  const invalidIndex = source.findIndex(value => typeof value !== "string");
+  if (invalidIndex >= 0) {
+    host.reportError(
+      "rsgl.collectionExpected",
+      `join expected every source item to be String, but item ${invalidIndex} is ${runtimeValueKind(source[invalidIndex])}.`,
+      sourceArg.range
+    );
     host.markFailure();
     return handledFailure();
   }

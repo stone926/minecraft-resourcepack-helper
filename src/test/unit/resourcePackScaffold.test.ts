@@ -2,7 +2,13 @@ import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { defaultPackAttributes, getPackMcmeta, isPackFormatVersion } from "../../commands/constants";
-import { createNamespaceFolders, resourcePackNamespaceDirectories, writePackScaffold } from "../../commands/resourcePackScaffold";
+import {
+  createNamespaceFolders,
+  isValidPackDirectoryName,
+  isValidResourcePackNamespace,
+  resourcePackNamespaceDirectories,
+  writePackScaffold
+} from "../../commands/resourcePackScaffold";
 import { createTempDirectory } from "./helpers/tempPack";
 
 describe("resource pack scaffold", () => {
@@ -63,6 +69,33 @@ describe("resource pack scaffold", () => {
     assert.strictEqual(isPackFormatVersion("86.2"), true);
     assert.strictEqual(isPackFormatVersion("0"), false);
     assert.strictEqual(isPackFormatVersion("86.x"), false);
+  });
+
+  it("rejects pack names and namespaces that can escape the scaffold root", () => {
+    assert.strictEqual(isValidPackDirectoryName("My 资源包"), true);
+    assert.strictEqual(isValidPackDirectoryName("../outside"), false);
+    assert.strictEqual(isValidPackDirectoryName(".."), false);
+    assert.strictEqual(isValidPackDirectoryName("nested/pack"), false);
+    assert.strictEqual(isValidResourcePackNamespace("custom_pack-1.0"), true);
+    assert.strictEqual(isValidResourcePackNamespace("../outside"), false);
+    assert.strictEqual(isValidResourcePackNamespace(".."), false);
+    assert.strictEqual(isValidResourcePackNamespace("Uppercase"), false);
+    assert.strictEqual(isValidResourcePackNamespace("con"), false);
+    assert.strictEqual(isValidResourcePackNamespace("custom."), false);
+  });
+
+  it("defensively refuses an unsafe namespace at the filesystem boundary", () => {
+    const root = createTempDirectory();
+
+    try {
+      assert.throws(
+        () => createNamespaceFolders(root, "../outside"),
+        /Invalid resource pack namespace/
+      );
+      assert.strictEqual(fs.existsSync(path.join(root, "outside")), false);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 

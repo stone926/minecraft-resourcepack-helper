@@ -64,7 +64,7 @@ describe("mixed RSGL/resource-pack workflows", () => {
       fs.writeFileSync(archivePath, archiveBytes);
       const archive = ZipArchive.fromBytes(archiveBytes);
       const archiveEntryPath = "assets/external/models/block/shared_custom.json";
-      const archiveModelText = Buffer.from(archive.readFile(archiveEntryPath)).toString("utf8");
+      const archiveModelText = Buffer.from(await archive.readFile(archiveEntryPath)).toString("utf8");
       assert.strictEqual(JSON.parse(archiveModelText).fixture_origin, "custom-zip-shadowed");
 
       const sourceFiles = loadRsglSourceFilesFromDirectory(sourceRoot);

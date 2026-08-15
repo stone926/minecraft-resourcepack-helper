@@ -7,16 +7,18 @@
   "required": ["sprites"],
   "properties": {
     "near_distance": {
-      "type": "number",
+      "type": "integer",
       "title": "Near distance threshold",
       "description": "The maximum distance at which the first sprite in sprites is used. Defaults to 128.",
+      "default": 128,
       "minimum": 0,
       "maximum": 60000000
     },
     "far_distance": {
-      "type": "number",
+      "type": "integer",
       "title": "Far distance threshold",
       "description": "The minimum distance at which the last sprite in sprites is used. Defaults to 332. Value should be greater than near_distance.",
+      "default": 332,
       "minimum": 0,
       "maximum": 60000000
     },

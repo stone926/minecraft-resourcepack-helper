@@ -31,6 +31,7 @@ export interface PhysicalResourceDocumentFact {
   layerId: string;
   layerRole: ResourceLayerRole;
   outputPath?: string;
+  blockedByLayerIds?: readonly string[];
   references: readonly PhysicalResourceReferenceFact[];
 }
 
@@ -91,6 +92,9 @@ export function createPhysicalAssetSnapshot(
       }],
       materializationState: "handwritten",
       outputPath: normalizeResourceGraphFileSystemPath(outputPath) ?? outputPath,
+      ...(document.blockedByLayerIds?.length
+        ? { blockedByLayerIds: [...document.blockedByLayerIds] }
+        : {}),
       revision: document.revision
     };
     producers.push(producer);

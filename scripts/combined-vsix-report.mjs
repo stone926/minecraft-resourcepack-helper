@@ -299,7 +299,7 @@ function validateModeEvidence(value, expectedMode) {
   }
   assertDeepEqual(
     value.jsonAssets.files.map(file => file.path),
-    value.stage.paths.filter(entryPath => entryPath.endsWith(".json") && entryPath !== "package.json"),
+    value.stage.paths.filter(entryPath => entryPath.endsWith(".json")),
     `${expectedMode} JSON asset evidence is incomplete.`
   );
   for (const [id, runtimePath] of Object.entries(combinedVsixRuntimeEntries)) {

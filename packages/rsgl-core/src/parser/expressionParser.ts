@@ -40,8 +40,34 @@ interface ExpressionOptions {
   allowLeadingLineBreak?: boolean;
 }
 
+/** Bounds recursive-descent work before hostile nesting can exhaust the JS stack. */
+export const MAX_EXPRESSION_PARSE_DEPTH = 128;
+
 export class ExpressionParser extends TypeParser {
+  private expressionDepth: number;
+
+  public constructor(
+    tokens: RsglToken[],
+    diagnostics: RsglDiagnostic[],
+    initialExpressionDepth = 0
+  ) {
+    super(tokens, diagnostics);
+    this.expressionDepth = initialExpressionDepth;
+  }
+
   protected parseExpression(options: ExpressionOptions = {}, minPrecedence = 0): ExprNode {
+    if (this.expressionDepth >= MAX_EXPRESSION_PARSE_DEPTH) {
+      return this.recoverExpressionDepthLimit(options, minPrecedence);
+    }
+    this.expressionDepth++;
+    try {
+      return this.parseExpressionWithinLimit(options, minPrecedence);
+    } finally {
+      this.expressionDepth--;
+    }
+  }
+
+  private parseExpressionWithinLimit(options: ExpressionOptions, minPrecedence: number): ExprNode {
     const stopTexts = options.stopTexts ?? [];
     const contextualStopTexts = minPrecedence === 0
       ? options.contextualStopTexts ?? []
@@ -574,7 +600,7 @@ export class ExpressionParser extends TypeParser {
       raw: token.text,
       parts: parseTemplateStringParts(
         token,
-        parseStandaloneTemplateExpression,
+        text => parseStandaloneTemplateExpression(text, this.expressionDepth),
         diagnostic => this.addDiagnostic(
           diagnostic.code,
           diagnostic.message,
@@ -640,6 +666,59 @@ export class ExpressionParser extends TypeParser {
       && this.isStatementBoundary(this.current());
   }
 
+  private recoverExpressionDepthLimit(options: ExpressionOptions, minPrecedence: number): ExprNode {
+    const token = this.current();
+    this.addDiagnostic(
+      "rsgl.expressionNestingTooDeep",
+      `Expression nesting exceeds the safe depth of ${MAX_EXPRESSION_PARSE_DEPTH}.`,
+      getNodeOrTokenRange(token)
+    );
+    this.skipExpressionAtDepthLimit(
+      minPrecedence === 0
+        ? [...(options.stopTexts ?? []), ...(options.contextualStopTexts ?? [])]
+        : options.stopTexts ?? [],
+      options.allowLeadingLineBreak === true
+    );
+    return this.missingExprAt(token);
+  }
+
+  private skipExpressionAtDepthLimit(
+    stopTexts: readonly string[],
+    allowLeadingLineBreak: boolean
+  ): void {
+    const stops = new Set(stopTexts);
+    const expectedClosers: string[] = [];
+    const closingDelimiters = new Set([")", "]", "}"]);
+    let first = true;
+    while (!this.isAtEnd()) {
+      const token = this.current();
+      if (expectedClosers.length === 0) {
+        if (stops.has(token.text) || closingDelimiters.has(token.text)) {
+          break;
+        }
+        if ((!first || !allowLeadingLineBreak) && this.isStatementBoundary(token)) {
+          break;
+        }
+      }
+
+      const expectedClose = token.text === "(" ? ")"
+        : token.text === "[" ? "]"
+          : token.text === "{" ? "}"
+            : undefined;
+      if (expectedClose) {
+        expectedClosers.push(expectedClose);
+      } else if (closingDelimiters.has(token.text)) {
+        const matchingIndex = expectedClosers.lastIndexOf(token.text);
+        if (matchingIndex < 0) {
+          break;
+        }
+        expectedClosers.length = matchingIndex;
+      }
+      this.advance();
+      first = false;
+    }
+  }
+
   protected recoverToLineEnd(): void {
     while (!this.isAtEnd() && !this.isStatementBoundary(this.current()) && this.current().text !== "}") {
       this.advance();
@@ -694,9 +773,16 @@ export class StandaloneExpressionParser extends ExpressionParser {
   }
 }
 
-function parseStandaloneTemplateExpression(text: string): TemplateExpressionParseResult {
+function parseStandaloneTemplateExpression(
+  text: string,
+  initialExpressionDepth = 0
+): TemplateExpressionParseResult {
   const lexResult = lexRsgl(text);
-  const parser = new StandaloneExpressionParser(lexResult.tokens, lexResult.diagnostics);
+  const parser = new StandaloneExpressionParser(
+    lexResult.tokens,
+    lexResult.diagnostics,
+    initialExpressionDepth
+  );
   return {
     expression: parser.parse(),
     diagnostics: parser.getDiagnostics()

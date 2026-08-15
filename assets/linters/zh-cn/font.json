@@ -68,12 +68,14 @@
           }
         },
         "ascent": {
-          "type": "number",
+          "type": "integer",
           "title": "ascent 上升高度"
         },
         "height": {
-          "type": "number",
-          "title": "height 字符高度"
+          "type": "integer",
+          "minimum": 1,
+          "title": "height 字符高度",
+          "default": 8
         },
         "size": {
           "type": "number",
@@ -89,7 +91,7 @@
           "minItems": 2,
           "maxItems": 2,
           "items": {
-            "type": "integer",
+            "type": "number",
             "minimum": -512,
             "maximum": 512
           }
@@ -157,13 +159,6 @@
                 "minimum": 0,
                 "maximum": 32,
                 "title": "right 右边界"
-              },
-              "ranges": {
-                "type": "array",
-                "title": "ranges Unicode 区块",
-                "items": {
-                  "type": "string"
-                }
               }
             }
           }

@@ -1,9 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import {
-  currentJavaResourcePackFormat,
-  legacyJavaResourcePackFormatBoundary
-} from "./javaResourcePackFormat";
+import { currentJavaResourcePackFormat } from "./javaResourcePackFormat";
 
 export interface PackMetadata {
   overlays: OverlayEntry[];
@@ -36,6 +33,13 @@ export interface PackMetadataReadOptions {
   pathExists?: (filePath: string) => boolean;
 }
 
+export interface OverlayActivationOptions {
+  /** Concrete format used when selecting format-gated overlays. */
+  targetPackFormat?: ResourcePackFormat;
+  /** Non-empty explicit selection overrides format-derived activation. */
+  overlaySelection?: readonly string[];
+}
+
 const overlayDirectoryPattern = /^[a-z0-9_-]+$/;
 
 export function readPackMetadata(packRoot: string, options: PackMetadataReadOptions = {}): PackMetadata {
@@ -64,22 +68,41 @@ export function parsePackMetadata(raw: unknown): PackMetadata {
   };
 }
 
-export function overlayApplies(entry: OverlayEntry): boolean {
+export function overlayApplies(
+  entry: OverlayEntry,
+  targetPackFormat: ResourcePackFormat = currentJavaResourcePackFormat
+): boolean {
   if (entry.minFormat || entry.maxFormat) {
-    return (!entry.minFormat || compareFormats(currentJavaResourcePackFormat, entry.minFormat) >= 0) &&
-      (!entry.maxFormat || compareFormats(currentJavaResourcePackFormat, entry.maxFormat) <= 0);
+    return (!entry.minFormat || compareFormats(targetPackFormat, entry.minFormat) >= 0) &&
+      (!entry.maxFormat || compareFormats(targetPackFormat, entry.maxFormat) <= 0);
   }
 
   if (entry.legacyFormats) {
-    return legacyJavaResourcePackFormatBoundary >= entry.legacyFormats.min &&
-      legacyJavaResourcePackFormatBoundary <= entry.legacyFormats.max;
+    return targetPackFormat.major >= entry.legacyFormats.min &&
+      targetPackFormat.major <= entry.legacyFormats.max;
   }
 
   return false;
 }
 
+/** Resolves active overlays while preserving their metadata declaration order. */
+export function selectActiveOverlays(
+  entries: readonly OverlayEntry[],
+  options: OverlayActivationOptions = {}
+): OverlayEntry[] {
+  const explicitSelection = options.overlaySelection?.length
+    ? new Set(options.overlaySelection)
+    : null;
+  if (explicitSelection) {
+    return entries.filter(entry => explicitSelection.has(entry.directory));
+  }
+
+  const targetPackFormat = options.targetPackFormat ?? currentJavaResourcePackFormat;
+  return entries.filter(entry => overlayApplies(entry, targetPackFormat));
+}
+
 export function resourceMatchesFilters(
-  filters: ResourceFilter[],
+  filters: readonly ResourceFilter[],
   namespace: string,
   resourcePath: string | undefined
 ): boolean {

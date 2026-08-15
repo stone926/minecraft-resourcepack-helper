@@ -1,6 +1,6 @@
 import * as assert from "node:assert/strict";
 import { rsglModelGeometryKeywords } from "../../src/modelGeometrySyntax";
-import { lexRsgl } from "../../src/parser";
+import { lexRsgl, parseRsgl } from "../../src/parser";
 
 describe("RSGL lexer", () => {
   it("retains trivia that reaches EOF on the EOF token", () => {
@@ -28,6 +28,25 @@ describe("RSGL lexer", () => {
     assert.ok(result.tokens.some(token => token.kind === "resourceLocation" && token.text === "minecraft:block/acacia_planks"));
     assert.ok(result.tokens.some(token => token.kind === "templateString"));
     assert.ok(result.tokens.some(token => token.kind === "number" && token.text === "88"));
+  });
+
+  it("diagnoses hexadecimal literals without digits and keeps recovery values finite", () => {
+    const result = lexRsgl("let value = 0x");
+    const invalidHex = result.diagnostics.find(diagnostic => diagnostic.code === "rsgl.invalidHexNumber");
+
+    assert.deepStrictEqual(invalidHex?.range, { start: 12, end: 14 });
+    assert.ok(result.tokens.some(token => token.kind === "number" && token.text === "0x"));
+
+    const module = parseRsgl("let value = 0x");
+    const declaration = module.statements[0];
+    assert.strictEqual(declaration?.kind, "LetDecl");
+    if (declaration?.kind === "LetDecl") {
+      assert.strictEqual(declaration.value.kind, "NumberLiteral");
+      if (declaration.value.kind === "NumberLiteral") {
+        assert.strictEqual(declaration.value.value, 0);
+        assert.strictEqual(Number.isNaN(declaration.value.value), false);
+      }
+    }
   });
 
   it("tokenizes namespace import punctuation without introducing new keywords", () => {

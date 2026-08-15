@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import { getConfiguredVanillaResourcePackPath } from "../utils/resourceConfiguration";
 
-export default function openDefaultMcAssetsPath() {
+export function openDefaultMcAssetsPath(): void {
   const defaultPath = getConfiguredVanillaResourcePackPath();
   if (!defaultPath) {
     return;
@@ -10,4 +10,6 @@ export default function openDefaultMcAssetsPath() {
   vscode.commands.executeCommand("vscode.openFolder", vscode.Uri.file(defaultPath), {
     "forceNewWindow": true
   });
-};
+}
+
+export default openDefaultMcAssetsPath;

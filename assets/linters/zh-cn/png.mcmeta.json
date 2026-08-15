@@ -59,13 +59,19 @@
         },
         "width": {
           "type": "integer",
-          "minimum": 1,
-          "description": "帧宽度比率。"
+          "description": "帧宽度（像素）。值为 -1 时等同于省略此维度。",
+          "oneOf": [
+            { "const": -1 },
+            { "minimum": 1 }
+          ]
         },
         "height": {
           "type": "integer",
-          "minimum": 1,
-          "description": "帧高度比率。"
+          "description": "帧高度（像素）。值为 -1 时等同于省略此维度。",
+          "oneOf": [
+            { "const": -1 },
+            { "minimum": 1 }
+          ]
         }
       }
     },

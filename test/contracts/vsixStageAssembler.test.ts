@@ -227,6 +227,8 @@ describe("main VSIX stage assembler", () => {
     const relativeJson = path.join("syntaxes", "rsgl.tmLanguage.json");
     const developmentBytes = fs.readFileSync(path.join(development.stageRoot, relativeJson));
     const developmentValue = JSON.parse(developmentBytes.toString("utf8")) as unknown;
+    const developmentManifestBytes = fs.readFileSync(path.join(development.stageRoot, "package.json"));
+    const developmentManifest = JSON.parse(developmentManifestBytes.toString("utf8")) as unknown;
     const developmentPaths = listFiles(development.stageRoot);
     const developmentIgnore = fs.readFileSync(
       path.join(development.stageRoot, ".vscodeignore"),
@@ -248,9 +250,19 @@ describe("main VSIX stage assembler", () => {
       bundleMode: "production"
     });
     const productionBytes = fs.readFileSync(path.join(production.stageRoot, relativeJson));
+    const productionManifestBytes = fs.readFileSync(path.join(production.stageRoot, "package.json"));
     assert.deepStrictEqual(JSON.parse(productionBytes.toString("utf8")), developmentValue);
     assert.ok(productionBytes.length < developmentBytes.length);
     assert.strictEqual(productionBytes.toString("utf8"), JSON.stringify(developmentValue));
+    assert.deepStrictEqual(
+      JSON.parse(productionManifestBytes.toString("utf8")),
+      developmentManifest
+    );
+    assert.ok(productionManifestBytes.length < developmentManifestBytes.length);
+    assert.strictEqual(
+      productionManifestBytes.toString("utf8"),
+      JSON.stringify(developmentManifest)
+    );
     assert.notStrictEqual(production.contentHash, development.contentHash);
     assert.deepStrictEqual(
       developmentPaths,
