@@ -13,6 +13,15 @@ describe("resource graph effective blockstate inventory", function () {
     const inventoryPath = resolveFreshCompiledModule(
       "src/services/resourceSearchInventoryService.ts"
     );
+    const snapshotPath = resolveFreshCompiledModule(
+      "src/resourceUniverse/providers/physicalAssetSnapshot.ts"
+    );
+    const indexPath = resolveFreshCompiledModule(
+      "src/resourceUniverse/core/resourceUniverseIndex.ts"
+    );
+    const navigationPath = resolveFreshCompiledModule(
+      "src/resourceUniverse/navigation/resourceNavigationService.ts"
+    );
     const script = [
       "const assert = require('node:assert/strict');",
       "const Module = require('node:module'); const originalLoad = Module._load;",
@@ -26,6 +35,9 @@ describe("resource graph effective blockstate inventory", function () {
       "Module._load = function(request, ...args) { return request === 'vscode' ? vscode : originalLoad.call(this, request, ...args); };",
       "const { ResourceGraphService } = require(process.argv[1]);",
       "const { ResourceSearchInventoryService } = require(process.argv[2]);",
+      "const { createPhysicalAssetSnapshot } = require(process.argv[3]);",
+      "const { ResourceUniverseIndex } = require(process.argv[4]);",
+      "const { ResourceNavigationService } = require(process.argv[5]);",
       "const layer = (layerId, role, rootUri, priority) => ({ layerId, role, source: 'directory', rootUri, priority, metadataRevision: layerId + '-r1' });",
       "const local = layer('local', 'local', 'file:///pack', 0);",
       "const customHigh = layer('custom-high', 'custom', 'file:///custom-high', 10);",
@@ -59,6 +71,18 @@ describe("resource graph effective blockstate inventory", function () {
       "  assert.deepStrictEqual(discovered.uris.map(uri => uri.toString()), ['file:///custom-high/assets/demo/blockstates/stone.json']);",
       "  assert.deepStrictEqual(discovered.resources.map(resource => resource.target.id), ['demo:generated']);",
       "  assert.deepStrictEqual({ legacyCalls, graphEnsures, inventoryCalls, refreshEnsures }, { legacyCalls: 1, graphEnsures: 1, inventoryCalls: 2, refreshEnsures: 1 });",
+      "  const fallbackContext = { ...context, projectId: 'fallback-project', externalLayers: [], contextRevision: 'fallback-r1' };",
+      "  const fallbackIndex = new ResourceUniverseIndex();",
+      "  const ownedOutputPath = 'assets/minecraft/blockstates/acacia_door.json';",
+      "  const ownedDocument = (layerValue, uri) => ({ uri, fileName: new URL(uri).pathname, outputPath: ownedOutputPath, revision: layerValue.layerId + '-r1', layerId: layerValue.layerId, layerRole: layerValue.role, references: [] });",
+      "  fallbackIndex.replaceSnapshot(createPhysicalAssetSnapshot({ projectId: 'fallback-project', generation: 1, revision: 'fallback-physical-r1', ownedOutputPaths: new Set([ownedOutputPath]), documents: [ownedDocument(local, 'file:///pack/assets/minecraft/blockstates/acacia_door.json'), ownedDocument(vanilla, 'file:///vanilla/assets/minecraft/blockstates/acacia_door.json')] }));",
+      "  const fallbackProjects = { getCachedContexts: () => [fallbackContext], getCachedContext: () => fallbackContext };",
+      "  const fallbackRefresh = { ensureProjectForUri: async () => ({ rsglApplicability: 'none' }), applicableProviderIds: () => ['physical'] };",
+      "  const fallbackInventory = new ResourceSearchInventoryService(fallbackProjects, fallbackIndex, new ResourceNavigationService(fallbackIndex), fallbackRefresh);",
+      "  const fallbackGraph = new ResourceGraphService({ getKnownResources: (kinds, options) => fallbackInventory.getKnownResources(kinds, options), ensureProjectForUri: async () => { throw new Error('known project must not use legacy discovery'); } }, { getBlockstateUris: async () => { throw new Error('known project must not scan the workspace'); } });",
+      "  const fallbackKnown = await fallbackGraph.getBlockstateInventory();",
+      "  assert.strictEqual(fallbackKnown.status, 'authoritative');",
+      "  assert.deepStrictEqual(fallbackKnown.uris.map(uri => uri.toString()), ['file:///vanilla/assets/minecraft/blockstates/acacia_door.json']);",
       "})().catch(error => { console.error(error); process.exitCode = 1; });"
     ].join("\n");
 
@@ -66,7 +90,10 @@ describe("resource graph effective blockstate inventory", function () {
       "-e",
       script,
       graphPath,
-      inventoryPath
+      inventoryPath,
+      snapshotPath,
+      indexPath,
+      navigationPath
     ]);
 
     assertTestProcessStatus(result);

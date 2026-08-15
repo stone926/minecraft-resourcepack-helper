@@ -107,6 +107,45 @@ describe("physical asset provider snapshot", () => {
     assert.deepStrictEqual(snapshot.producers, []);
   });
 
+  it("keeps external fallbacks for manifest-owned local output paths", () => {
+    const outputPath = "assets/minecraft/blockstates/acacia_door.json";
+    const document = (
+      layerId: string,
+      layerRole: "local" | "custom" | "vanilla",
+      uri: string
+    ) => ({
+      uri,
+      fileName: new URL(uri).pathname,
+      outputPath,
+      revision: `${layerId}-r1`,
+      layerId,
+      layerRole,
+      references: []
+    });
+    const snapshot = createPhysicalAssetSnapshot({
+      projectId: "project",
+      generation: 1,
+      revision: "r1",
+      ownedOutputPaths: new Set([outputPath]),
+      documents: [
+        document("local", "local", "file:///generated/assets/minecraft/blockstates/acacia_door.json"),
+        document("custom", "custom", "file:///custom/assets/minecraft/blockstates/acacia_door.json"),
+        document("vanilla", "vanilla", "file:///vanilla/assets/minecraft/blockstates/acacia_door.json")
+      ]
+    });
+
+    assert.deepStrictEqual(
+      snapshot.producers.map(producer => producer.layerRole).sort(),
+      ["custom", "vanilla"],
+      "generated ownership must suppress only the local materialization"
+    );
+    assert.ok(snapshot.producers.every(producer =>
+      producer.logicalKeys.some(key =>
+        key.kind === "blockstate" && key.id === "minecraft:acacia_door"
+      )
+    ));
+  });
+
   it("keeps vanilla origins read-only even when the configured layer is a local directory", () => {
     const snapshot = createPhysicalAssetSnapshot({
       projectId: "project",

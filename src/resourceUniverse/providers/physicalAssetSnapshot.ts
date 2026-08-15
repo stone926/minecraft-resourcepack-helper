@@ -40,7 +40,7 @@ export interface PhysicalAssetSnapshotOptions {
   generation: number;
   revision: string;
   documents: readonly PhysicalResourceDocumentFact[];
-  /** Manifest-owned output paths are contributed by the materialization provider instead. */
+  /** Local manifest-owned outputs are contributed by the materialization provider instead. */
   ownedOutputPaths?: ReadonlySet<string>;
   coverage?: ProviderCoverage;
 }
@@ -60,7 +60,11 @@ export function createPhysicalAssetSnapshot(
   for (const document of [...options.documents].sort(compareDocuments)) {
     const outputPath = document.outputPath ?? document.fileName;
     const outputPathIdentity = normalizeResourceGraphFileSystemPath(outputPath, { caseSensitive: false });
-    if (outputPathIdentity && ownedOutputPaths.has(outputPathIdentity)) {
+    if (
+      document.layerRole === "local"
+      && outputPathIdentity
+      && ownedOutputPaths.has(outputPathIdentity)
+    ) {
       continue;
     }
     const identity = canonicalizeResourceGraphOutputPath(outputPath, {

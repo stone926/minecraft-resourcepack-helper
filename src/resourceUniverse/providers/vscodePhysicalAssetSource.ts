@@ -584,16 +584,26 @@ async function packAssetsRoots(
   throwIfAborted(signal, "Physical asset scan was cancelled.");
   let metadata: ReturnType<typeof parsePackMetadata> | undefined;
   let complete = true;
+  let metadataBytes: Uint8Array | undefined;
   try {
-    const bytes = await vscode.workspace.fs.readFile(vscode.Uri.parse(
+    metadataBytes = await vscode.workspace.fs.readFile(vscode.Uri.parse(
       joinResourceProjectUri(packRootUri, packMetadataFileName),
       true
     ));
-    metadata = parsePackMetadata(JSON.parse(Buffer.from(bytes).toString("utf8")) as unknown);
   } catch (error) {
-    metadata = undefined;
     if (!isFileNotFoundError(error)) {
       complete = false;
+    }
+  }
+  if (metadataBytes) {
+    try {
+      metadata = parsePackMetadata(
+        JSON.parse(Buffer.from(metadataBytes).toString("utf8")) as unknown
+      );
+    } catch {
+      // Invalid metadata cannot activate overlays, but the base assets root is
+      // still fully enumerable; malformed contents are a validation concern.
+      metadata = undefined;
     }
   }
   throwIfAborted(signal, "Physical asset scan was cancelled.");
