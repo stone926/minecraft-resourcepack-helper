@@ -363,7 +363,10 @@ describe("single-extension release contracts", function () {
 
     assert.strictEqual(permission(cli, "id-token"), "write");
     const cliPublishRun = stepRun(getWorkflowStep(release.workflow, "publish_cli", "Publish RSGL CLI to npm"));
-    assert.match(cliPublishRun, /npm publish .*--provenance/);
+    assert.match(
+      cliPublishRun,
+      /npm publish "\.\/release\/\$\{ASSET_NAME\}" --access public --provenance/
+    );
     assert.match(cliPublishRun, /dist\.integrity/);
     assert.match(cliPublishRun, /LOCAL_INTEGRITY/);
     assert.match(cliPublishRun, /already published with the verified artifact; continuing/);

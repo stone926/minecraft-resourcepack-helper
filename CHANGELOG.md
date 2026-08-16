@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- fix: publish verified CLI tarballs through explicit local paths so npm cannot parse them as GitHub shorthands.
+
 ## [2.3.5] - 2026-08-16
 
 - fix: make clean-checkout release gates independent of platform line endings, checkout paths, and pre-existing output directories.

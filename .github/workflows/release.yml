@@ -337,7 +337,7 @@ jobs:
             echo "Unexpected registry integrity response for ${PACKAGE_SPEC}: ${PUBLISHED_INTEGRITY}" >&2
             exit 1
           else
-            npm publish "release/${ASSET_NAME}" --access public --provenance
+            npm publish "./release/${ASSET_NAME}" --access public --provenance
           fi
 
       - name: Create or update GitHub release
