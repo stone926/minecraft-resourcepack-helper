@@ -31,7 +31,10 @@ describe("packaged Extension Host smoke contract", () => {
     assert.match(harness, /--extensionTestsPath=/);
     assert.match(harness, /--user-data-dir=/);
     assert.match(harness, /--extensions-dir=/);
-    assert.doesNotMatch(harness, /--disable-gpu/);
+    assert.match(harness, /--no-sandbox/);
+    assert.match(harness, /--disable-gpu-sandbox/);
+    assert.match(harness, /--disable-updates/);
+    assert.doesNotMatch(harness, /["']--disable-gpu["']/);
   });
 
   it("probes off, JSON-only, lazy single-flight, screenshot, and disposal", () => {

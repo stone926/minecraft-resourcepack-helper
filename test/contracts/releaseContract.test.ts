@@ -171,7 +171,7 @@ describe("single-extension release contracts", function () {
     );
     assert.strictEqual(
       prepareRuntime.if,
-      "runner.os == 'Linux' && (inputs.product == 'all' || inputs.product == 'main')"
+      "inputs.product == 'all' || inputs.product == 'main'"
     );
     assert.strictEqual(prepareRuntime.run, "node scripts/prepare-vscode-test-runtime.mjs");
     const reusableSteps = reusableVerify.steps ?? [];

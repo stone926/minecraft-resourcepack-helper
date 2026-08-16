@@ -62,7 +62,7 @@ jobs:
         run: npm ci
 
       - name: Prepare VS Code test runtime
-        if: runner.os == 'Linux' && (inputs.product == 'all' || inputs.product == 'main')
+        if: inputs.product == 'all' || inputs.product == 'main'
         run: node scripts/prepare-vscode-test-runtime.mjs
 
       - name: Audit runtime dependencies

@@ -3,7 +3,7 @@
 ## [Unreleased]
 
 - fix: make clean-checkout release gates independent of platform line endings, checkout paths, and pre-existing output directories.
-- fix: use portable VSIX extraction for Unicode Windows paths and provision the minimum supported VS Code runtime for release smoke tests.
+- fix: use portable VSIX extraction for Unicode Windows paths and provision the minimum supported VS Code runtime across release smoke-test platforms.
 - build: retain modest installed-size headroom while preserving the existing archive, bundle, and activation budgets.
 - ci: align branch verification with the repository's `main` default branch.
 

@@ -37,6 +37,11 @@ export function runPackagedExtensionHostSmoke(extensionRoot, options = {}) {
   try {
     createFixture(workspaceRoot);
     const invocation = codeInvocation(codeExecutable, [
+      // Match @vscode/test-electron's launch defaults. Downloaded Linux
+      // archives cannot safely install a setuid-root sandbox helper in CI.
+      "--no-sandbox",
+      "--disable-gpu-sandbox",
+      "--disable-updates",
       `--user-data-dir=${path.join(temporaryRoot, "user data")}`,
       `--extensions-dir=${path.join(temporaryRoot, "extensions")}`,
       `--extensionDevelopmentPath=${resolvedExtensionRoot}`,
