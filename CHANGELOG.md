@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.3.4] - 2026-08-16
+
 - fix: align pack filters, overlay selection, model inheritance, schemas, and diagnostics with Minecraft 26.2 semantics.
 - fix: harden model-preview refreshes, resource-pack scaffolding, CIT creation, RSGL parsing, and CLI argument boundaries.
 - perf: move CIT inventory traversal and archive decompression/CRC work off synchronous extension-host paths.
