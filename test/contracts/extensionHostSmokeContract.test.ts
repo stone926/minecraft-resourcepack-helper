@@ -34,6 +34,10 @@ describe("packaged Extension Host smoke contract", () => {
     assert.match(harness, /--no-sandbox/);
     assert.match(harness, /--disable-gpu-sandbox/);
     assert.match(harness, /--disable-updates/);
+    assert.match(harness, /process\.platform === "linux"/);
+    assert.match(harness, /--use-gl=angle/);
+    assert.match(harness, /--use-angle=swiftshader/);
+    assert.match(harness, /--enable-unsafe-swiftshader/);
     assert.doesNotMatch(harness, /["']--disable-gpu["']/);
   });
 

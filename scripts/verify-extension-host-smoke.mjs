@@ -36,12 +36,22 @@ export function runPackagedExtensionHostSmoke(extensionRoot, options = {}) {
   const resultFile = path.join(temporaryRoot, "extension-host-result.json");
   try {
     createFixture(workspaceRoot);
+    const softwareWebGlArguments = process.platform === "linux"
+      ? [
+          // Headless Linux runners blocklist hardware WebGL. Explicit
+          // SwiftShader keeps the Three.js pixel probe graphical and deterministic.
+          "--use-gl=angle",
+          "--use-angle=swiftshader",
+          "--enable-unsafe-swiftshader"
+        ]
+      : [];
     const invocation = codeInvocation(codeExecutable, [
       // Match @vscode/test-electron's launch defaults. Downloaded Linux
       // archives cannot safely install a setuid-root sandbox helper in CI.
       "--no-sandbox",
       "--disable-gpu-sandbox",
       "--disable-updates",
+      ...softwareWebGlArguments,
       `--user-data-dir=${path.join(temporaryRoot, "user data")}`,
       `--extensions-dir=${path.join(temporaryRoot, "extensions")}`,
       `--extensionDevelopmentPath=${resolvedExtensionRoot}`,
