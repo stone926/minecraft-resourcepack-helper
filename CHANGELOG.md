@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.3.5] - 2026-08-16
+
 - fix: make clean-checkout release gates independent of platform line endings, checkout paths, and pre-existing output directories.
 - fix: use portable VSIX extraction for Unicode Windows paths and provision the minimum supported VS Code runtime across release smoke-test platforms.
 - build: retain modest installed-size headroom while preserving the existing archive, bundle, and activation budgets.
