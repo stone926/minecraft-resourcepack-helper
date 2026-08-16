@@ -95,6 +95,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Prepare VS Code test runtime
+        if: needs.contract.outputs.product == 'main'
+        run: node scripts/prepare-vscode-test-runtime.mjs
+
       - name: Install pinned Marketplace publishing client
         if: needs.contract.outputs.publish_kind == 'marketplace'
         run: npm ci --prefix tools/vsce-publisher --ignore-scripts

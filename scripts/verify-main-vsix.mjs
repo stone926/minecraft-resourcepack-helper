@@ -14,7 +14,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import { Worker } from "node:worker_threads";
-import { extractZipArchive } from "./extension-host-harness.mjs";
+import { prepareVsixExtension } from "./activation-probe/prepared-vsix.mjs";
 import { runPackagedExtensionHostSmoke } from "./verify-extension-host-smoke.mjs";
 import {
   combinedVsixRuntimeEntries,
@@ -28,12 +28,17 @@ if (!existsSync(vsixPath)) {
   fail(`Combined VSIX does not exist: ${vsixPath}`);
 }
 
-const extractionRoot = mkdtempSync(path.join(tmpdir(), "mcres-combined-vsix-smoke-"));
+// The prepared cache adds two digest path segments. Keep the disposable prefix
+// short so spawned Windows runtimes retain legacy MAX_PATH headroom.
+const extractionRoot = mkdtempSync(path.join(tmpdir(), "v-"));
 try {
-  const unicodeInstallRoot = path.join(extractionRoot, "安装路径 with spaces");
+  const unicodeInstallRoot = path.join(extractionRoot, "安装 x");
   mkdirSync(unicodeInstallRoot, { recursive: true });
-  extractZipArchive(vsixPath, unicodeInstallRoot, "combined VSIX");
-  const extensionRoot = path.join(unicodeInstallRoot, "extension");
+  const prepared = await prepareVsixExtension({
+    artifactPath: vsixPath,
+    repositoryRoot: unicodeInstallRoot
+  });
+  const extensionRoot = prepared.extensionRoot;
   const fixtureRoot = path.join(extractionRoot, "工作区 fixture with spaces");
   mkdirSync(fixtureRoot, { recursive: true });
   verifyCombinedRuntimePayload(extensionRoot, { comparisonDevelopment });

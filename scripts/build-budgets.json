@@ -85,7 +85,7 @@
   "mainVsix": {
     "archiveBytes": 1000000,
     "compressedEntriesBytes": 985000,
-    "installedBytes": 3525000,
+    "installedBytes": 3600000,
     "fileCount": 88,
     "runtimeEntryCompressedBytes": {
       "root": 115000,

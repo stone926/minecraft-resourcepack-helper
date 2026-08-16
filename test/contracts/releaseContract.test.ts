@@ -164,6 +164,28 @@ describe("single-extension release contracts", function () {
     assert.strictEqual(getWorkflowJob(release.workflow, "publish_marketplace")["timeout-minutes"], 20);
     assert.strictEqual(getWorkflowJob(release.workflow, "publish_cli")["timeout-minutes"], 20);
 
+    const prepareRuntime = getWorkflowStep(
+      reusable.workflow,
+      "verify",
+      "Prepare VS Code test runtime"
+    );
+    assert.strictEqual(
+      prepareRuntime.if,
+      "runner.os == 'Linux' && (inputs.product == 'all' || inputs.product == 'main')"
+    );
+    assert.strictEqual(prepareRuntime.run, "node scripts/prepare-vscode-test-runtime.mjs");
+    const reusableSteps = reusableVerify.steps ?? [];
+    assert.ok(
+      stepIndex(reusableSteps, "Install dependencies")
+        < stepIndex(reusableSteps, "Prepare VS Code test runtime"),
+      "VS Code runtime preparation requires the installed pinned downloader"
+    );
+    assert.ok(
+      stepIndex(reusableSteps, "Prepare VS Code test runtime")
+        < stepIndex(reusableSteps, "Verify main extension package"),
+      "the Linux runtime must be exported before main VSIX verification"
+    );
+
     assertSingleCommandStep(
       reusable.workflow,
       "verify",
@@ -201,6 +223,26 @@ describe("single-extension release contracts", function () {
       "node scripts/artifact.mjs verify"
     );
     const buildSteps = getWorkflowJob(release.workflow, "build").steps ?? [];
+    const prepareBuildRuntime = getWorkflowStep(
+      release.workflow,
+      "build",
+      "Prepare VS Code test runtime"
+    );
+    assert.strictEqual(prepareBuildRuntime.if, "needs.contract.outputs.product == 'main'");
+    assert.strictEqual(
+      prepareBuildRuntime.run,
+      "node scripts/prepare-vscode-test-runtime.mjs"
+    );
+    assert.ok(
+      stepIndex(buildSteps, "Install dependencies")
+        < stepIndex(buildSteps, "Prepare VS Code test runtime"),
+      "immutable main verification requires the installed pinned runtime downloader"
+    );
+    assert.ok(
+      stepIndex(buildSteps, "Prepare VS Code test runtime")
+        < stepIndex(buildSteps, "Verify selected product"),
+      "the main release build must export VS Code before immutable artifact verification"
+    );
     assert.ok(
       stepIndex(buildSteps, "Package selected product") < stepIndex(buildSteps, "Verify selected product"),
       "immutable artifact verification must follow packaging"

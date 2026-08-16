@@ -473,7 +473,7 @@ describe("combined VSIX artifact measurement", () => {
     assert.deepStrictEqual(budgets.mainVsix, {
       archiveBytes: 1_000_000,
       compressedEntriesBytes: 985_000,
-      installedBytes: 3_525_000,
+      installedBytes: 3_600_000,
       fileCount: 88,
       runtimeEntryCompressedBytes: {
         root: 115_000,

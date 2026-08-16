@@ -13,6 +13,17 @@ describe("packaged Extension Host smoke contract", () => {
     assert.doesNotMatch(verifier, /SKIP.*EXTENSION.*HOST/i);
   });
 
+  it("extracts the combined VSIX portably below the Unicode install root", () => {
+    const verifier = read("scripts", "verify-main-vsix.mjs");
+    assert.match(verifier, /path\.join\(extractionRoot, "安装 x"\)/);
+    assert.match(
+      verifier,
+      /prepareVsixExtension\(\{\s*artifactPath: vsixPath,\s*repositoryRoot: unicodeInstallRoot\s*\}\)/
+    );
+    assert.match(verifier, /const extensionRoot = prepared\.extensionRoot/);
+    assert.doesNotMatch(verifier, /extractZipArchive/);
+  });
+
   it("loads the packaged path with isolated state and a real graphical webview", () => {
     const harness = read("scripts", "verify-extension-host-smoke.mjs");
     assert.match(harness, /工作区 with spaces/);
