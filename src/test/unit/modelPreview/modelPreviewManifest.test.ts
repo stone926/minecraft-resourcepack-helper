@@ -74,8 +74,14 @@ describe("model preview manifest", () => {
     assert.match(hostSource, /"bundle", "model-preview\.js"/);
     assert.strictEqual(hostSource.includes('"webviews", "modelPreview", "main.js"'), false);
     assert.strictEqual(
-      fs.readFileSync(path.join(process.cwd(), "licenses", "THREE-LICENSE.txt"), "utf8"),
-      fs.readFileSync(path.join(process.cwd(), "node_modules", "three", "LICENSE"), "utf8")
+      normalizeLineEndings(fs.readFileSync(
+        path.join(process.cwd(), "licenses", "THREE-LICENSE.txt"),
+        "utf8"
+      )),
+      normalizeLineEndings(fs.readFileSync(
+        path.join(process.cwd(), "node_modules", "three", "LICENSE"),
+        "utf8"
+      ))
     );
   });
 
@@ -218,6 +224,10 @@ describe("model preview manifest", () => {
     assert.match(cache, /entry\.deactivate\(\)/, "prune/dispose should suppress late texture callbacks");
   });
 });
+
+function normalizeLineEndings(value: string): string {
+  return value.replace(/\r\n?/g, "\n");
+}
 
 function readPackageJson(): PackageJson {
   return JSON.parse(fs.readFileSync(path.join(process.cwd(), "package.json"), "utf8")) as PackageJson;

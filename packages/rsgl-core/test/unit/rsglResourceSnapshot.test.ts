@@ -40,12 +40,13 @@ describe("RSGL contentless resource snapshot", () => {
       { kind: "model", id: "demo:block/child" },
       { kind: "model", id: "demo:block/parent" }
     ]);
-    assert.deepStrictEqual(snapshot.edges.map(edge => [
+    const edgeFacts = snapshot.edges.map(edge => [
       edge.relationship,
       edge.target,
       edge.resolutionScope,
       edge.resolvedTarget.status
-    ]), [
+    ] as const).sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0);
+    assert.deepStrictEqual(edgeFacts, [
       ["blockstateModel", { kind: "model", id: "demo:block/child" }, "effective", "generated"],
       ["modelInheritance", { kind: "model", id: "demo:block/parent" }, "effective", "generated"],
       ["texture", { kind: "texture", id: "demo:block/stone" }, "local", "physical"]

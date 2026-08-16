@@ -1,6 +1,7 @@
 import * as assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import * as fs from "node:fs";
+import { tmpdir } from "node:os";
 import * as path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -217,7 +218,7 @@ describe("paired activation comparison evidence", () => {
   });
 
   it("refuses to overwrite either measured VSIX with the report", () => {
-    const root = fs.mkdtempSync(path.join(repositoryRoot, "dist", "paired-output-contract-"));
+    const root = fs.mkdtempSync(path.join(tmpdir(), "paired-output-contract-"));
     try {
       const baselinePath = path.join(root, "baseline.vsix");
       const candidatePath = path.join(root, "candidate.vsix");

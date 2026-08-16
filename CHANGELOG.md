@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- fix: make clean-checkout release gates independent of platform line endings, checkout paths, and pre-existing output directories.
+- ci: align branch verification with the repository's `main` default branch.
+
 ## [2.3.4] - 2026-08-16
 
 - fix: align pack filters, overlay selection, model inheritance, schemas, and diagnostics with Minecraft 26.2 semantics.
